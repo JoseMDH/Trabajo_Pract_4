@@ -1,31 +1,48 @@
 import paho.mqtt.client as mqtt
-import RPi.GPIO as GPIO
-import time
-
-# Config GPIO servo/LED
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(18, GPIO.OUT)  # Servo pin
-GPIO.setup(17, GPIO.OUT)  # LED pin
-servo = GPIO.PWM(18, 50)
-servo.start(0)
 
 BROKER = "localhost"
-TOPIC_SENSOR = "sensor/detectado"
-TOPIC_ACTUADOR = "actuador/status"
+
+TOPIC_SENSOR_LUZ   = "sensor/luz"
+TOPIC_SENSOR_PUERTA = "sensor/persona"
+TOPIC_LED          = "actuador/led"
+TOPIC_SERVO        = "actuador/servo"
+
+# Umbral a ajustar
+UMBRAL_LUZ_OSCURO = 400
 
 def on_connect(client, userdata, flags, rc):
-    print("Conectado al broker")
-    client.subscribe(TOPIC_SENSOR)
+    print("Conectado al broker, código:", rc)
+    client.subscribe(TOPIC_SENSOR_LUZ)
+    client.subscribe(TOPIC_SENSOR_PUERTA)
 
 def on_message(client, userdata, msg):
-    if msg.payload.decode() == "PERSONA":
-        print("Persona detectada. Abriendo puerta...")
-        GPIO.output(17, GPIO.HIGH)
-        servo.ChangeDutyCycle(7.5)
-        time.sleep(2)
-        servo.ChangeDutyCycle(2.5)  
-        GPIO.output(17, GPIO.LOW) 
-        client.publish(TOPIC_ACTUADOR, "Cerrando puerta...")
+    topic = msg.topic
+    payload = msg.payload.decode().strip()
+    print("Mensaje recibido:", topic, payload)
+
+    if topic == TOPIC_SENSOR_LUZ:
+        try:
+            valor = int(payload)
+        except ValueError:
+            print("Valor no numérico en sensor/luz:", payload)
+            return
+
+        if valor > UMBRAL_LUZ_OSCURO:
+            # Está oscuro -> encender LED
+            client.publish(TOPIC_LED, "on")
+            print("Está oscuro, mando on al LED")
+        else:
+            client.publish(TOPIC_LED, "off")
+            print("Hay luz, mando off al LED")
+
+    elif topic == TOPIC_SENSOR_PUERTA:
+        # Enviando Persona/NoPersona o lo que sea.
+        if payload == "PERSONA":
+            client.publish(TOPIC_SERVO, "o")   # open
+            print("Persona detectada, mando o al SERVO")
+        elif payload == "NOPERSONA":
+            client.publish(TOPIC_SERVO, "c")   # close
+            print("Sin persona, mando c al SERVO")
 
 client = mqtt.Client()
 client.on_connect = on_connect
