@@ -23,6 +23,17 @@
 #include <Arduino_PMIC.h>
 
 // =====================
+// Configuración Serial
+// =====================
+// Usamos Serial1 para comunicación con Raspberry Pi (GPIO)
+// Serial1 en MKR WAN 1310: Pin 13 (RX), Pin 14 (TX)
+// Conectar: Arduino Pin 13 (RX) -> Raspberry GPIO14 (TX)
+//           Arduino Pin 14 (TX) -> Raspberry GPIO15 (RX)
+//           GND común
+#define SERIAL_PI Serial1
+#define SERIAL_DEBUG Serial  // USB para debug (opcional)
+
+// =====================
 // Configuración LoRa
 // =====================
 const uint8_t localAddress = 0x05;     // Dirección de este dispositivo (gateway)
@@ -82,19 +93,19 @@ uint16_t msgCounter = 0;
 // =====================
 
 /**
- * Envía un mensaje por Serial en formato de trama
+ * Envía un mensaje por Serial1 en formato de trama (a la Raspberry Pi)
  */
 void sendSerialMessage(uint8_t msgType, const char* topic, const uint8_t* payload, uint8_t payloadLen) {
   uint8_t topicLen = strlen(topic);
   
-  Serial.write(STX);
-  Serial.write(msgType);
-  Serial.write(topicLen);
-  Serial.write((const uint8_t*)topic, topicLen);
-  Serial.write(payloadLen);
-  Serial.write(payload, payloadLen);
-  Serial.write(ETX);
-  Serial.flush();
+  SERIAL_PI.write(STX);
+  SERIAL_PI.write(msgType);
+  SERIAL_PI.write(topicLen);
+  SERIAL_PI.write((const uint8_t*)topic, topicLen);
+  SERIAL_PI.write(payloadLen);
+  SERIAL_PI.write(payload, payloadLen);
+  SERIAL_PI.write(ETX);
+  SERIAL_PI.flush();
 }
 
 /**
@@ -293,19 +304,30 @@ void onTxDone() {
 // Setup
 // =====================
 void setup() {
-  Serial.begin(115200);
-  while (!Serial && millis() < 5000);  // Esperar hasta 5 segundos
+  // Serial para debug por USB (opcional)
+  SERIAL_DEBUG.begin(115200);
+  
+  // Serial1 para comunicación con Raspberry Pi (GPIO)
+  SERIAL_PI.begin(115200);
+  
+  // Esperar un poco para estabilizar
+  delay(1000);
+  
+  SERIAL_DEBUG.println("Gateway LoRa-Serial iniciando...");
   
   // Inicializar PMIC
   if (!init_PMIC()) {
-    // Error silencioso, continuar de todos modos
+    SERIAL_DEBUG.println("PMIC init failed");
   }
   
   // Inicializar LoRa
   if (!LoRa.begin(868E6)) {
+    SERIAL_DEBUG.println("LoRa init failed!");
     sendStatus("LoRa init failed");
     while (true);
   }
+  
+  SERIAL_DEBUG.println("LoRa init OK");
   
   // Configurar parámetros LoRa
   LoRa.setSignalBandwidth(long(bandwidth_kHz[nodeConfig.bandwidth_index]));
@@ -322,7 +344,11 @@ void setup() {
   // Activar recepción
   LoRa.receive();
   
-  // Enviar estado inicial
+  SERIAL_DEBUG.println("Gateway listo!");
+  SERIAL_DEBUG.println("Serial1 -> Raspberry Pi GPIO");
+  SERIAL_DEBUG.println("Serial  -> USB Debug");
+  
+  // Enviar estado inicial a la Raspberry
   sendStatus("Gateway ready");
 }
 
@@ -330,14 +356,14 @@ void setup() {
 // Loop principal
 // =====================
 void loop() {
-  // Procesar datos del puerto serie
-  while (Serial.available()) {
+  // Procesar datos del puerto serie (desde Raspberry Pi)
+  while (SERIAL_PI.available()) {
     if (serialBufferIdx < SERIAL_BUFFER_SIZE) {
-      serialBuffer[serialBufferIdx++] = Serial.read();
+      serialBuffer[serialBufferIdx++] = SERIAL_PI.read();
     } else {
       // Buffer lleno, descartar byte más antiguo
       memmove(serialBuffer, serialBuffer + 1, SERIAL_BUFFER_SIZE - 1);
-      serialBuffer[SERIAL_BUFFER_SIZE - 1] = Serial.read();
+      serialBuffer[SERIAL_BUFFER_SIZE - 1] = SERIAL_PI.read();
     }
   }
   

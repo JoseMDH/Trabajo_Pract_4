@@ -27,7 +27,11 @@ from enum import IntEnum
 # =====================
 # Configuración
 # =====================
-SERIAL_PORT = "/dev/ttyACM0"  # Puerto serie del Arduino (ajustar según sistema)
+# Puerto serie GPIO de la Raspberry Pi
+# GPIO14 (TXD) -> Arduino Serial1 RX (Pin 13)
+# GPIO15 (RXD) -> Arduino Serial1 TX (Pin 14)
+# IMPORTANTE: Deshabilitar consola serial en raspi-config
+SERIAL_PORT = "/dev/serial0"  # Puerto GPIO UART de la Raspberry Pi
 SERIAL_BAUD = 115200
 
 MQTT_BROKER = "localhost"
