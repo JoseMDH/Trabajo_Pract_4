@@ -2,13 +2,13 @@ import paho.mqtt.client as mqtt
 
 BROKER = "localhost"
 
-TOPIC_PUERTA = "puerta/estado"  # 00Cerrado,01Abierto,10Cerrado,11Abierto
-TOPIC_LUZ    = "luz/estado"     # 0HayLuz,1NoHayLuz
+TOPIC_1 = "puerta/estado"     # 00Cerrado,01Abierto,10Cerrado,11Abierto
+TOPIC_0    = "luz/estado"     # 0HayLuz,1NoHayLuz
 
 def on_connect(client, userdata, flags, rc):
     print("Conectado al broker, código:", rc)
-    client.subscribe(TOPIC_PUERTA)
-    client.subscribe(TOPIC_LUZ)
+    client.subscribe(TOPIC_1)
+    client.subscribe(TOPIC_0)
 
 def on_message(client, userdata, msg):
     topic = msg.topic
