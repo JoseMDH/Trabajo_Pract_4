@@ -15,7 +15,7 @@
 
 // OLED display removed — using Serial for output
 
-#define NUM_SENSORS 2
+#define NUM_SENSORS 3
 
 #ifdef ARDUINO_AVR_UNO
 #include <SoftwareSerial.h>
@@ -39,7 +39,8 @@ struct SensorConfig {
 
 SensorConfig sensors[NUM_SENSORS] = {
   {SRF01_I2C_ADDRESS, 1, 70, false, 0, 0, 0, false, "SRF01"},
-  {SRF02_I2C_ADDRESS, 1, 70, false, 0, 0, 0, false, "SRF02"}
+  {SRF02_I2C_ADDRESS, 1, 70, false, 0, 0, 0, false, "SRF02"},
+  {0xFF, 3, 70, false, 0, 0, 0, true, "LDR"} // sensor de luz (analógico)
 };
 
 bool isI2CDeviceAvailable(uint8_t address) {
@@ -141,7 +142,11 @@ void handleCommand(uint8_t code) {
     SensorConfig &s = sensors[sensor_id];
     
     if (mode_bits == 0b00) {  // one-shot
-      s.lastMeasure = readSRF02(s.address, s.unit);
+      if (s.address == 0xFF) {
+        s.lastMeasure = analogRead(A1);
+      } else {
+        s.lastMeasure = readSRF02(s.address, s.unit);
+      }
       
       // Print reading to serial monitor
       Serial.print("Sensor ");
@@ -251,7 +256,11 @@ void setup() {
   delay(1000);
   
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
-    sensors[i].active = isI2CDeviceAvailable(sensors[i].address);
+    if (sensors[i].address == 0xFF) {
+      sensors[i].active = true; // analog sensor LDR
+    } else {
+      sensors[i].active = isI2CDeviceAvailable(sensors[i].address);
+    }
   }
   
   // updateOLEDStatus removed — show status via Serial
@@ -268,8 +277,12 @@ void setup() {
       sensors[i].periodMs = 1000; // 1s por defecto
       sensors[i].lastShot = millis();
 
-      // lectura inicial
-      sensors[i].lastMeasure = readSRF02(sensors[i].address, sensors[i].unit);
+      // lectura inicial (SRF02 I2C o LDR analógico)
+      if (sensors[i].address == 0xFF) {
+        sensors[i].lastMeasure = analogRead(A1);
+      } else {
+        sensors[i].lastMeasure = readSRF02(sensors[i].address, sensors[i].unit);
+      }
 
       // imprimir por monitor serial
       Serial.print("Sensor ");
@@ -297,16 +310,17 @@ void loop() {
     uint8_t code = Serial1.read();
     handleCommand(code);
   }
-  int lectura = analogRead(A1);
-  Serial.println(lectura);
-  delay(1000);
 
   unsigned long now = millis();
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     SensorConfig &s = sensors[i];
     if (s.periodic && s.active && (now - s.lastShot >= s.periodMs)) {
       s.lastShot = now;
-      s.lastMeasure = readSRF02(s.address, s.unit);
+      if (s.address == 0xFF) {
+        s.lastMeasure = analogRead(A1);
+      } else {
+        s.lastMeasure = readSRF02(s.address, s.unit);
+      }
       
       // Print periodic reading to serial monitor
       Serial.print("Sensor ");
