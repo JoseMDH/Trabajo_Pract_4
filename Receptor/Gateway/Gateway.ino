@@ -232,6 +232,33 @@ void sendLoRaMessage(uint8_t destination, const char* topic, const uint8_t* payl
 }
 
 /**
+ * Envía un mensaje por LoRa en modo RAW (solo payload, sin topic)
+ * Usado para el actuador que espera: tipo(1) + valor(1)
+ */
+void sendLoRaMessageRaw(uint8_t destination, const uint8_t* payload, uint8_t payloadLen) {
+  while(!LoRa.beginPacket()) {
+    delay(10);
+  }
+  
+  // Cabecera del paquete LoRa (mismo formato que el actuador espera)
+  LoRa.write(destination);                // Destinatario
+  LoRa.write(localAddress);               // Remitente
+  LoRa.write((uint8_t)(msgCounter >> 8)); // ID mensaje (MSB)
+  LoRa.write((uint8_t)(msgCounter & 0xFF)); // ID mensaje (LSB)
+  LoRa.write(payloadLen);                 // Longitud del payload
+  LoRa.write(payload, payloadLen);        // Payload directo (tipo + valor)
+  
+  LoRa.endPacket(true);  // No bloqueante
+  
+  SERIAL_DEBUG.print("LoRa TX raw -> 0x");
+  SERIAL_DEBUG.print(destination, HEX);
+  SERIAL_DEBUG.print(" len=");
+  SERIAL_DEBUG.println(payloadLen);
+  
+  msgCounter++;
+}
+
+/**
  * Callback de recepción LoRa
  */
 void onLoRaReceive(int packetSize) {
@@ -376,21 +403,49 @@ void loop() {
         transmitting = true;
         txDoneFlag = false;
         
-        // Extraer destino del primer byte del payload si existe, o usar default
+        // Extraer destino del topic si tiene formato "@XX/..."
         uint8_t destination = defaultDestination;
-        uint8_t* payloadPtr = msg.payload;
-        uint8_t payloadLen = msg.payloadLen;
+        char* topicToSend = msg.topic;
+        bool rawMode = false;  // Modo raw: enviar solo payload sin topic
         
-        // Si el primer byte del topic es '@', el siguiente byte es la dirección destino
-        // Formato especial: topic = "@XX/resto" donde XX es la dirección hex
         if (msg.topicLen > 3 && msg.topic[0] == '@') {
           char hexAddr[3] = {msg.topic[1], msg.topic[2], '\0'};
           destination = (uint8_t)strtol(hexAddr, NULL, 16);
-          // Ajustar topic eliminando el prefijo @XX/
-          memmove(msg.topic, msg.topic + 4, msg.topicLen - 3);
+          
+          // Si el topic empieza con @XX/, es para el actuador -> modo raw
+          // El actuador espera: tipo(1) + valor(1), sin topic
+          rawMode = true;
+          
+          // Mover el puntero del topic después de "@XX/"
+          if (msg.topicLen > 4 && msg.topic[3] == '/') {
+            topicToSend = msg.topic + 4;
+          } else {
+            topicToSend = msg.topic + 3;
+          }
+          
+          SERIAL_DEBUG.print("Destino: 0x");
+          SERIAL_DEBUG.println(destination, HEX);
+          SERIAL_DEBUG.print("Modo raw: ");
+          SERIAL_DEBUG.println(rawMode ? "SI" : "NO");
         }
         
-        sendLoRaMessage(destination, msg.topic, payloadPtr, payloadLen);
+        if (rawMode) {
+          // Modo raw: enviar solo el payload directamente (para actuador)
+          SERIAL_DEBUG.print("Enviando raw a 0x");
+          SERIAL_DEBUG.print(destination, HEX);
+          SERIAL_DEBUG.print(": ");
+          for (int i = 0; i < msg.payloadLen; i++) {
+            SERIAL_DEBUG.print(msg.payload[i], HEX);
+            SERIAL_DEBUG.print(" ");
+          }
+          SERIAL_DEBUG.println();
+          
+          sendLoRaMessageRaw(destination, msg.payload, msg.payloadLen);
+        } else {
+          // Modo normal: enviar topic + payload
+          sendLoRaMessage(destination, topicToSend, msg.payload, msg.payloadLen);
+        }
+        
         sendAck();
       } else {
         sendNack("TX busy");

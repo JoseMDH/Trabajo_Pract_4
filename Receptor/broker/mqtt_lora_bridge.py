@@ -47,8 +47,13 @@ TOPIC_ACTUADOR = "actuador/comando"         # Comandos para actuadores remotos
 # Topics a los que suscribirse para enviar por LoRa
 TOPICS_TO_LORA = [
     TOPIC_LORA_TX,
-    TOPIC_ACTUADOR
+    TOPIC_ACTUADOR,
+    TOPIC_SENSOR_LUZ,
+    TOPIC_SENSOR_PUERTA
 ]
+
+# Dirección del actuador
+ACTUADOR_ADDRESS = 0x06
 
 # =====================
 # Constantes del protocolo serial
@@ -290,10 +295,44 @@ class MQTTLoRaBridge:
         topic = msg.topic
         payload = msg.payload
         
-        print(f"[MQTT] Recibido: {topic} -> {payload.decode('utf-8', errors='replace')}")
+        print(f"\n{'='*50}")
+        print(f"[MQTT] Mensaje recibido en topic: {topic}")
+        print(f"[MQTT] Payload: {payload.decode('utf-8', errors='replace')}")
         
-        # Enviar por LoRa a través del Arduino
-        self.serial_proto.send_message(MsgType.LORA_TX, topic, payload)
+        # Traducir mensajes de sensores al formato del actuador (tipo + valor)
+        if topic == TOPIC_SENSOR_PUERTA:
+            # Formato actuador: tipo=1 (puerta), valor=payload
+            try:
+                valor = int(payload.decode('utf-8').strip())
+                binary_payload = bytes([1, valor])  # tipo=1 (puerta), valor
+                # Usar prefijo @XX para indicar dirección destino
+                dest_topic = f"@{ACTUADOR_ADDRESS:02X}/actuador/puerta"
+                print(f"[Bridge] Traduciendo para actuador 0x{ACTUADOR_ADDRESS:02X}")
+                print(f"[Bridge] -> tipo=1 (puerta), valor={valor}")
+                print(f"[Bridge] -> Enviando: {binary_payload.hex()}")
+                self.serial_proto.send_message(MsgType.LORA_TX, dest_topic, binary_payload)
+            except ValueError as e:
+                print(f"[Bridge] Error parseando valor de puerta: {e}")
+                
+        elif topic == TOPIC_SENSOR_LUZ:
+            # Formato actuador: tipo=0 (luz), valor=payload
+            try:
+                valor = int(payload.decode('utf-8').strip())
+                binary_payload = bytes([0, valor])  # tipo=0 (luz), valor
+                dest_topic = f"@{ACTUADOR_ADDRESS:02X}/actuador/luz"
+                print(f"[Bridge] Traduciendo para actuador 0x{ACTUADOR_ADDRESS:02X}")
+                print(f"[Bridge] -> tipo=0 (luz), valor={valor}")
+                print(f"[Bridge] -> Enviando: {binary_payload.hex()}")
+                self.serial_proto.send_message(MsgType.LORA_TX, dest_topic, binary_payload)
+            except ValueError as e:
+                print(f"[Bridge] Error parseando valor de luz: {e}")
+        
+        else:
+            # Otros topics: enviar tal cual
+            print(f"[Bridge] Enviando mensaje genérico por LoRa")
+            self.serial_proto.send_message(MsgType.LORA_TX, topic, payload)
+        
+        print(f"{'='*50}\n")
     
     def _on_serial_message(self, msg_type: int, topic: str, payload: bytes, lora_msg: Optional[LoRaMessage]):
         """Callback cuando se recibe un mensaje del Arduino"""
