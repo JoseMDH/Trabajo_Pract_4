@@ -1,7 +1,7 @@
 #include <Servo.h>
 
 Servo miServo;  // Crear objeto servo
-int pinServo = 9;  // Pin donde está conectado el servo
+int pinServo = 7;  // Pin donde está conectado el servo
 int posicion = 90;  // Posición inicial (centro)
 
 void setup() {
@@ -24,7 +24,7 @@ void loop() {
       Serial.println("Girando a la DERECHA (180°)");
     }
     else if (comando == 'c' || comando == 'C') {
-      posicion = 0;  // Close door
+      posicion = 10o;  // Close door
       miServo.write(posicion);
       Serial.println("Girando a la IZQUIERDA (0°)");
     }
