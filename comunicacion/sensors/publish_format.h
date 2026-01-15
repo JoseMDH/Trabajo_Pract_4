@@ -1,16 +1,19 @@
-#ifndef MQTTPUBLISH
-#define MQTTPUBLISH
+#ifndef PUBLISH
+#define PUBLISH
 
 #define TYPE 0b0011
 
-typedef {
-  uint8_t headerLow = 0b00000011;
-  uint8_t remainingLength = 4;
-  uint8_t topicLengthLow = 1;
-  uint8_t topicLengthHigh = 0;
-  uint8_t topic;
-  uint8_t payload;
-} PublishMessage
+/*
+Serial format.
+[0] topicId
+[1] payload flag
+*/
+
+#define LIGHT 0
+#define DISTANCE 1
+
+#define USLimit 100 //centimeters
+#define PRLimit 500 // lumens
 
 #define LOW 0b0 // us long distance / nothing, high light
 #define HIGH 0b1 // us short distance , low light
