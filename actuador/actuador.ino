@@ -8,6 +8,8 @@ int pinServo = 7;
 int pinLed   = 6;
 int posicion = 10;
 uint8_t localAddress = 0x06;
+const uint8_t senderAddress = 0x05;
+const uint8_t SYNC_WORD = 0x12;
 
 void aplicarPuerta(uint8_t v) {
   if (v == 0) {          // 00 -> cerrar
@@ -51,9 +53,10 @@ void setup() {
   digitalWrite(pinLed, LOW);
 
   if (!LoRa.begin(868E6)) {
-  Serial.println("Error LoRa");
-  while (1);
+    Serial.println("Error LoRa");
+    while (1);
   }
+  LoRa.setSyncWord(SYNC_WORD);
   LoRa.onReceive(onReceive);
   LoRa.receive();
 
@@ -69,6 +72,14 @@ void onReceive(int packetSize) {
   uint8_t  msgLen   = LoRa.read();
 
   if (recipient != localAddress && recipient != 0xFF) {
+    while (LoRa.available()) LoRa.read();
+    return;
+  }
+
+  // Solo aceptar si el emisor es 0x05
+  if (sender != senderAddress) {
+    Serial.print("Paquete ignorado, viene de 0x");
+    Serial.println(sender, HEX);
     while (LoRa.available()) LoRa.read();
     return;
   }
