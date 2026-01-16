@@ -52,8 +52,9 @@ uint16_t readSRF02(uint8_t address) {
 
 
 
-uint8_t checkPR(){
-  uint8_t result = LOW;
+char checkPR(){
+  char result = LOW;
+  Serial.println(analogRead(PR));
   if (analogRead(PR)<=PRLimit) result = HIGH;
   return result;
 }
@@ -70,6 +71,7 @@ void setup() {
   Wire.begin();
   Serial1.begin(9600);
   pinMode(A1, INPUT);
+  Serial.begin(9600);
 }
 
 void loop()
@@ -100,8 +102,8 @@ void loop()
   if (now - lastPR >= DELAY) {
     lastPR = now;
 
-    uint8_t prPayload = checkPR();
-
+    char prPayload = checkPR();
+    Serial.println(prPayload);
     sendSensorPublish(LIGHT, prPayload);
   }
 }

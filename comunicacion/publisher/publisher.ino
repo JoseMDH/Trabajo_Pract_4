@@ -92,14 +92,14 @@ void publish()
   if (Serial1.available() < 2) return;
 
   uint8_t topicId = Serial1.read();
-  uint8_t payload = Serial1.read();
+  char payload = Serial1.read();
 
   uint8_t payloadData[1] = { payload };
   
   lora_send_by_topic_id(topicId, payloadData, 1);
-  
-  Serial.print("TX: topicId=");
+  if (topicId==0){
+    Serial.print("TX: topicId=");
   Serial.print(topicId);
   Serial.print(" payload=");
-  Serial.println(payload);
+  Serial.println(payload); }
 }
