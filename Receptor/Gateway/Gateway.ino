@@ -89,6 +89,18 @@ volatile bool transmitting = false;
 uint16_t msgCounter = 0;
 
 // =====================
+// Buffer para recepción LoRa (evitar I/O en ISR)
+// =====================
+typedef struct {
+  bool pending;              // Hay mensaje pendiente de procesar
+  char topic[MAX_TOPIC_LEN + 1];
+  uint8_t payload[MAX_PAYLOAD_LEN + 3];  // sender + rssi + snr + datos
+  uint8_t payloadLen;
+} LoRaRxMessage_t;
+
+volatile LoRaRxMessage_t loraRxMsg = {false, {0}, {0}, 0};
+
+// =====================
 // Funciones de protocolo serial
 // =====================
 
@@ -260,10 +272,18 @@ void sendLoRaMessageRaw(uint8_t destination, const uint8_t* payload, uint8_t pay
 
 /**
  * Callback de recepción LoRa
+ * NOTA: Este callback se ejecuta en contexto de interrupción.
+ * NO hacer operaciones de I/O (Serial) aquí. Solo guardar datos en buffer.
  */
 void onLoRaReceive(int packetSize) {
   if (transmitting && !txDoneFlag) txDoneFlag = true;
   if (packetSize == 0) return;
+  
+  // Si hay un mensaje pendiente sin procesar, descartar el nuevo
+  if (loraRxMsg.pending) {
+    while (LoRa.available()) LoRa.read();
+    return;
+  }
   
   // Leer cabecera
   uint8_t recipient = LoRa.read();
@@ -292,13 +312,14 @@ void onLoRaReceive(int packetSize) {
   
   // Separar topic y payload
   // Buscar el null terminator del topic
-  char topic[MAX_TOPIC_LEN + 1] = {0};
-  uint8_t topicLen = 0;
-  while (topicLen < idx && buffer[topicLen] != '\0' && topicLen < MAX_TOPIC_LEN) {
-    topic[topicLen] = buffer[topicLen];
-    topicLen++;
+  uint8_t topicLen = buffer[0];
+  //if(topicLen < MAX_TOPIC_LEN) //print error or skip
+  uint8_t charCount = 0;
+  while (charCount < topicLen) {
+    ((char*)loraRxMsg.topic)[charCount + 1] = buffer[charCount + 1];
+    charCount++;
   }
-  topic[topicLen] = '\0';
+  ((char*)loraRxMsg.topic)[topicLen] = '\0';
   
   uint8_t payloadStart = topicLen + 1;  // Después del null terminator
   uint8_t payloadLen = (payloadStart < idx) ? (idx - payloadStart) : 0;
@@ -307,17 +328,17 @@ void onLoRaReceive(int packetSize) {
   int rssi = LoRa.packetRssi();
   float snr = LoRa.packetSnr();
   
-  // Construir payload para Serial: sender(1) + rssi(1) + snr(1) + payload
-  uint8_t serialPayload[MAX_PAYLOAD_LEN + 3];
-  serialPayload[0] = sender;
-  serialPayload[1] = (uint8_t)(-rssi);  // Convertir a positivo
-  serialPayload[2] = (uint8_t)(snr + 128);  // Añadir offset para manejar negativos
+  // Construir payload: sender(1) + rssi(1) + snr(1) + payload
+  ((uint8_t*)loraRxMsg.payload)[0] = sender;
+  ((uint8_t*)loraRxMsg.payload)[1] = (uint8_t)(-rssi);  // Convertir a positivo
+  ((uint8_t*)loraRxMsg.payload)[2] = (uint8_t)(snr + 128);  // Offset para negativos
   if (payloadLen > 0) {
-    memcpy(serialPayload + 3, buffer + payloadStart, payloadLen);
+    memcpy((uint8_t*)loraRxMsg.payload + 3, buffer + payloadStart, payloadLen);
   }
+  loraRxMsg.payloadLen = payloadLen + 3;
   
-  // Enviar por Serial
-  sendSerialMessage(MSG_TYPE_LORA_RX, topic, serialPayload, payloadLen + 3);
+  // Marcar mensaje como pendiente (esto lo procesará el loop principal)
+  loraRxMsg.pending = true;
 }
 
 /**
@@ -383,6 +404,29 @@ void setup() {
 // Loop principal
 // =====================
 void loop() {
+  // Procesar mensaje LoRa pendiente (recibido en ISR)
+  if (loraRxMsg.pending) {
+    // Copiar datos del buffer volatile a variables locales
+    char topic[MAX_TOPIC_LEN + 1];
+    uint8_t payload[MAX_PAYLOAD_LEN + 3];
+    uint8_t payloadLen;
+    
+    noInterrupts();  // Sección crítica
+    strcpy(topic, (const char*)loraRxMsg.topic);
+    memcpy(payload, (const uint8_t*)loraRxMsg.payload, loraRxMsg.payloadLen);
+    payloadLen = loraRxMsg.payloadLen;
+    loraRxMsg.pending = false;  // Marcar como procesado
+    interrupts();
+    
+    // Ahora es seguro hacer I/O serial
+    sendSerialMessage(MSG_TYPE_LORA_RX, topic, payload, payloadLen);
+    
+    SERIAL_DEBUG.print("LoRa RX: topic=");
+    SERIAL_DEBUG.print(topic);
+    SERIAL_DEBUG.print(" len=");
+    SERIAL_DEBUG.println(payloadLen);
+  }
+  
   // Procesar datos del puerto serie (desde Raspberry Pi)
   while (SERIAL_PI.available()) {
     if (serialBufferIdx < SERIAL_BUFFER_SIZE) {
