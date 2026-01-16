@@ -7,7 +7,6 @@
  //José Manuel Díaz Hernández
  //Nicolás Rey Alonso
 
-#include <LiquidCrystal_I2C.h>
 
 #ifdef ARDUINO_AVR_UNO
 #include <SoftwareSerial.h>
@@ -22,23 +21,14 @@ constexpr const uint32_t serial_monitor_bauds = 9600;
 constexpr const uint32_t serial1_bauds = 9600;
 
 String slaveBuffer = "";
-LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
   Serial.begin(serial_monitor_bauds);
-  while (!Serial)
-    ;
-
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("LCD listo!");
+  while (!Serial);
   delay(1000);
-  lcd.clear();
 
   Serial1.begin(serial1_bauds);
 
@@ -216,9 +206,6 @@ void parseSlaveMessage(uint8_t firstByte) {
   // Error (0xFF)
   if (firstByte == 0xFF) {
     Serial.println("[SLAVE] ERROR del dispositivo sensor");
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("ERROR ESCLAVO");
     return;
   }
 
@@ -275,14 +262,6 @@ void parseSlaveMessage(uint8_t firstByte) {
     Serial.print(measure);
     Serial.print(" ");
     Serial.println(unidad);
-
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(sensorLabel);
-    lcd.setCursor(0, 1);
-    lcd.print(measure);
-    lcd.print(" ");
-    lcd.print(unidad);
     return;
   }
 
@@ -316,15 +295,6 @@ void parseSlaveMessage(uint8_t firstByte) {
     Serial.print("  Periódico : ");
     Serial.println(periodic);
 
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("I2C:");
-    lcd.print(i2c_addr, HEX);
-    lcd.print(" ");
-    lcd.print(unidad);
-    lcd.setCursor(0, 1);
-    lcd.print("Per:");
-    lcd.print(periodic);
     return;
   }
 

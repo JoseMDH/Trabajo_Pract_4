@@ -13,19 +13,26 @@
 #define SRF02_RANGE_HIGH 0x02
 #define SRF02_RANGE_LOW 0x03
 
-uint8_t checkUS(uint16_t us1, uint16_t us2){
-  uint8_t result = LOW;
-  if (us1 > USLimit || us2 > USLimit) result = HIGH;
-  return result;
+// Byte de sincronización para el protocolo serial
+#define SYNC_BYTE 0xAA
+
+// Retorna SENSOR_HIGH si algún sensor detecta objeto cerca (distancia < límite)
+uint8_t checkUS(uint16_t us1, uint16_t us2) {
+  if (us1 < USLimit || us2 < USLimit) {
+    return SENSOR_HIGH;  // Objeto detectado cerca
+  }
+  return SENSOR_LOW;  // No hay objeto cerca
 }
 
 void sendSensorPublish(uint8_t sensorId, uint8_t flag)
 {
-  uint8_t msg[2];
-  msg[0] = sensorId;
-  msg[1] = flag;
+  uint8_t msg[3];
+  msg[0] = SYNC_BYTE;  // Byte de sincronización
+  msg[1] = sensorId;
+  msg[2] = flag;
 
   Serial1.write(msg, sizeof(msg));
+  Serial1.flush();  // Asegurar que se envía todo
 }
 
 uint16_t readSRF02(uint8_t address) {
@@ -52,11 +59,16 @@ uint16_t readSRF02(uint8_t address) {
 
 
 
-char checkPR(){
-  char result = LOW;
-  Serial.println(analogRead(PR));
-  if (analogRead(PR)<=PRLimit) result = HIGH;
-  return result;
+// Retorna SENSOR_HIGH si hay poca luz (valor ADC <= límite)
+uint8_t checkPR() {
+  uint16_t value = analogRead(PR);
+  Serial.print("PR ADC: ");
+  Serial.println(value);
+  
+  if (value <= PRLimit) {
+    return SENSOR_HIGH;  // Poca luz
+  }
+  return SENSOR_LOW;  // Luz normal/alta
 }
 
 
@@ -91,6 +103,13 @@ void loop()
 
     if (us1 != 0xFFFF && us2 != 0xFFFF) {
       uint8_t usPayload = checkUS(us1, us2);
+      
+      Serial.print("US: ");
+      Serial.print(us1);
+      Serial.print("cm, ");
+      Serial.print(us2);
+      Serial.print("cm -> ");
+      Serial.println(usPayload);
 
       sendSensorPublish(DISTANCE, usPayload);
     }
@@ -102,8 +121,10 @@ void loop()
   if (now - lastPR >= DELAY) {
     lastPR = now;
 
-    char prPayload = checkPR();
+    uint8_t prPayload = checkPR();
+    Serial.print("LIGHT payload: ");
     Serial.println(prPayload);
+    
     sendSensorPublish(LIGHT, prPayload);
   }
 }

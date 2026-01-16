@@ -6,12 +6,6 @@ constexpr const uint32_t serial1_bauds = 9600;
 const char* topics[] = {
   "sensor/0",    // topicId = 0
   "sensor/1",    // topicId = 1
-  "sensor/2",    // topicId = 2
-  "sensor/3",    // topicId = 3
-  "sensor/4",    // topicId = 4
-  "actuator/0",  // topicId = 5
-  "actuator/1",  // topicId = 6
-  "status"       // topicId = 7
 };
 const uint8_t NUM_TOPICS = sizeof(topics) / sizeof(topics[0]);
 
@@ -60,46 +54,69 @@ void setup() {
 uint8_t testValue = '0';
 void loop(){
   // Leer respuestas del esclavo
+  publish();
+}
+
+// Byte de sincronización (debe coincidir con comunicacion.ino)
+#define SYNC_BYTE 0xAA
+
+// Parser robusto: estado para mantener sincronía
+void publish() {
+  static enum { WAIT_SYNC, READ_TOPIC, READ_PAYLOAD } state = WAIT_SYNC;
+  static uint8_t topicId = 0;
+
   while (Serial1.available() > 0) {
-    publish();
-  }
+    uint8_t b = Serial1.read();
 
-  //test()
-}
+    switch (state) {
+      case WAIT_SYNC:
+        if (b == SYNC_BYTE) {
+          state = READ_TOPIC;
+        } else {
+          // Descartar basura
+          Serial.print("Descartando: 0x");
+          Serial.println(b, HEX);
+        }
+        break;
 
-void test(){
-  // Test: enviar mensajes de prueba cada 2 segundos
-  static uint32_t lastSend = 0;
+      case READ_TOPIC:
+        topicId = b;
+        if (topicId >= NUM_TOPICS) {
+          Serial.print("Error topic invalido: ");
+          Serial.println(topicId);
+          state = WAIT_SYNC;
+        } else {
+          state = READ_PAYLOAD;
+        }
+        break;
 
-  
-  if (millis() - lastSend > 2000) {
-    uint8_t payload[1] = { testValue };
-    lora_send_with_topic("sensor/1", payload, 1);
-    
-    Serial.print("TX: sensor/1 = ");
-    Serial.println(testValue);
-    if (testValue == '0'){
-      testValue = '1';
-    }else {
-      testValue = '0';
+      case READ_PAYLOAD: {
+        uint8_t payload = b;
+        // Si llega un SYNC aquí, perdimos bytes; reiniciar
+        if (payload == SYNC_BYTE) {
+          Serial.println("Desalineado: payload es SYNC");
+          state = READ_TOPIC; // ya tenemos un SYNC implícito en b
+          topicId = 0xFF;     // marcar inválido hasta recibir siguiente
+          break;
+        }
+
+        // Convertir 0/1 numérico a '0'/'1'
+        uint8_t payloadChar = (payload == 0) ? '0' : '1';
+        uint8_t payloadData[1] = { payloadChar };
+
+        lora_send_by_topic_id(topicId, payloadData, 1);
+
+        Serial.print("TX: topic=");
+        Serial.print(topics[topicId]);
+        Serial.print(" raw=");
+        Serial.print(payload);
+        Serial.print(" char=");
+        Serial.println((char)payloadChar);
+
+        // Preparar para siguiente trama
+        state = WAIT_SYNC;
+        break;
+      }
     }
-    lastSend = millis();
   }
-}
-
-void publish()
-{
-  if (Serial1.available() < 2) return;
-
-  uint8_t topicId = Serial1.read();
-  char payload = Serial1.read();
-
-  uint8_t payloadData[1] = { payload };
-  
-  lora_send_by_topic_id(topicId, payloadData, 1);
-  if (topicId==0){
-    Serial.print("TX: topicId=");
-  Serial.print(topicId);
-  Serial.print(" payload=");
-  Serial.println(payload); }
 }

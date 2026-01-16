@@ -5,20 +5,18 @@
 
 /*
 Serial format.
-[0] topicId
-[1] payload flag
+[0] topicId (0=LIGHT, 1=DISTANCE)
+[1] payload flag (0=LOW, 1=HIGH)
 */
 
-#define LIGHT 0
-#define DISTANCE 1
+#define LIGHT 1
+#define DISTANCE 0
 
 #define USLimit 100 //centimeters
-#define PRLimit 500 // lumens
+#define PRLimit 500 // valor ADC
 
-#define LOW '0' // us long distance / nothing, high light
-#define HIGH '1' // us short distance , low light
+// Valores numéricos para el payload
+#define SENSOR_LOW   0   // us: distancia larga (no hay objeto) / luz: alta
+#define SENSOR_HIGH  1   // us: distancia corta (hay objeto) / luz: baja
 
-// us payload: 2 bits = 00,01,10,11
-// light payload: 1 bit = 0,1
-// topics: LUZ = 0, DISTANCIA = 1
 #endif
