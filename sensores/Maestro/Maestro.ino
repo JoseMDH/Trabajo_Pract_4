@@ -7,6 +7,48 @@
  //José Manuel Díaz Hernández
  //Nicolás Rey Alonso
 
+#include <SPI.h>
+#include <LoRa.h>
+#include <Arduino_PMIC.h>
+
+// =====================
+// Configuración LoRa
+// =====================
+#define LORA_LOCAL_ADDRESS      0x04
+#define LORA_GATEWAY_ADDRESS    0x05
+#define LORA_FREQUENCY          868E6
+#define LORA_BW                 62.5E3
+#define LORA_SF                 10
+#define LORA_CR                 5
+#define LORA_TP                 2
+#define LORA_SYNC_WORD          0x12
+#define LORA_PREAMBLE_LENGTH    8
+
+// =====================
+// Umbrales de sensores
+// =====================
+#define LIGHT_THRESHOLD   500   // Si luz < 500 -> 1 (oscuro)
+#define DISTANCE_THRESHOLD 100  // Si distancia < 100cm -> 1 (objeto cerca)
+
+// =====================
+// Topics
+// =====================
+#define TOPIC_LIGHT    "sensor/1"   // -> sensores/luz en Gateway
+#define TOPIC_DISTANCE "sensor/0"   // -> sensores/puerta en Gateway
+
+// =====================
+// Variables globales
+// =====================
+uint16_t loraMessageCounter = 0;
+unsigned long lastLoraSendTime = 0;
+const unsigned long LORA_SEND_INTERVAL = 1000;  // 1 segundo
+
+// Últimos valores de sensores
+uint8_t lastLightState = 0xFF;     // 0xFF = no inicializado
+uint8_t lastDistanceState = 0xFF;
+uint16_t lastLightValue = 0;
+uint16_t lastDistance1 = 0xFFFF;   // Inicializar alto para evitar falsos positivos
+uint16_t lastDistance2 = 0xFFFF;   // Inicializar alto para evitar falsos positivos
 
 #ifdef ARDUINO_AVR_UNO
 #include <SoftwareSerial.h>
@@ -22,6 +64,46 @@ constexpr const uint32_t serial1_bauds = 9600;
 
 String slaveBuffer = "";
 
+// =====================
+// Funciones LoRa
+// =====================
+bool lora_init() {
+  if (!LoRa.begin(LORA_FREQUENCY)) return false;
+  LoRa.setSignalBandwidth(long(LORA_BW));
+  LoRa.setSpreadingFactor(LORA_SF);
+  LoRa.setCodingRate4(LORA_CR);
+  LoRa.setTxPower(LORA_TP, PA_OUTPUT_PA_BOOST_PIN);
+  LoRa.setSyncWord(LORA_SYNC_WORD);
+  LoRa.setPreambleLength(LORA_PREAMBLE_LENGTH);
+  return true;
+}
+
+/**
+ * Envía un mensaje LoRa con formato compatible con el Gateway
+ * Formato: topicLen(1) + topic(topicLen) + payload
+ */
+bool lora_send_with_topic(const char* topic, uint8_t payloadValue) {
+  uint8_t topicLen = strlen(topic);
+  uint8_t totalLen = 1 + topicLen + 1;  // topicLen + topic + payload(1 byte)
+  
+  LoRa.beginPacket();
+  LoRa.write(LORA_GATEWAY_ADDRESS);           // Destinatario
+  LoRa.write(LORA_LOCAL_ADDRESS);             // Remitente
+  LoRa.write((uint8_t)(loraMessageCounter >> 8));   // ID mensaje (MSB)
+  LoRa.write((uint8_t)(loraMessageCounter & 0xFF)); // ID mensaje (LSB)
+  LoRa.write(totalLen);                       // Longitud total de datos
+  
+  // Datos: topicLen + topic + payload
+  LoRa.write(topicLen);
+  LoRa.write((const uint8_t*)topic, topicLen);
+  LoRa.write(payloadValue);                   // Payload como char '0' o '1'
+  
+  LoRa.endPacket();
+  loraMessageCounter++;
+  
+  return true;
+}
+
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
@@ -32,8 +114,16 @@ void setup() {
 
   Serial1.begin(serial1_bauds);
 
+  // Inicializar LoRa
+  if (!lora_init()) {
+    Serial.println("ERROR: LoRa init failed!");
+    while (1);
+  }
+  Serial.println("LoRa init OK");
+
   Serial.println("=== SUPERVISOR INICIADO ===");
   Serial.println("Escribe 'help' para ver comandos disponibles");
+  Serial.println("Enviando datos por LoRa cada segundo...");
 }
 
 void loop() {
@@ -47,6 +137,49 @@ void loop() {
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     parseCommand(input);
+  }
+
+  // Enviar datos por LoRa cada segundo (si tenemos datos válidos)
+  unsigned long now = millis();
+  if (now - lastLoraSendTime >= LORA_SEND_INTERVAL) {
+    lastLoraSendTime = now;
+    sendLoRaUpdates();
+  }
+}
+
+/**
+ * Envía los estados actuales de los sensores por LoRa
+ */
+void sendLoRaUpdates() {
+  // Solo enviar si tenemos datos válidos
+  if (lastLightState != 0xFF) {
+    uint8_t payloadChar = (lastLightState == 1) ? '1' : '0';
+    lora_send_with_topic(TOPIC_LIGHT, payloadChar);
+    
+    Serial.print("[LoRa TX] ");
+    Serial.print(TOPIC_LIGHT);
+    Serial.print(" = ");
+    Serial.print((char)payloadChar);
+    Serial.print(" (valor raw: ");
+    Serial.print(lastLightValue);
+    Serial.println(")");
+    
+    delay(100);  // Esperar a que termine la transmisión antes de enviar otro
+  }
+  
+  if (lastDistanceState != 0xFF) {
+    uint8_t payloadChar = (lastDistanceState == 1) ? '1' : '0';
+    lora_send_with_topic(TOPIC_DISTANCE, payloadChar);
+    
+    Serial.print("[LoRa TX] ");
+    Serial.print(TOPIC_DISTANCE);
+    Serial.print(" = ");
+    Serial.print((char)payloadChar);
+    Serial.print(" (dist1: ");
+    Serial.print(lastDistance1);
+    Serial.print("cm, dist2: ");
+    Serial.print(lastDistance2);
+    Serial.println("cm)");
   }
 }
 
@@ -255,13 +388,38 @@ void parseSlaveMessage(uint8_t firstByte) {
                                             : (unit_byte == 2) ? "inc"
                                                                : "unk";
 
-    String sensorLabel = (sensor_id == 3) ? "Luz" : String(sensor_id);
+    String sensorLabel = (sensor_id == 2 || sensor_id == 3) ? "Luz" : String(sensor_id);
     Serial.print("[SLAVE] Medida - ");
     Serial.print(sensorLabel);
     Serial.print(": ");
     Serial.print(measure);
     Serial.print(" ");
     Serial.println(unidad);
+    
+    // Procesar según tipo de sensor y aplicar umbrales
+    if (sensor_id == 2 || sensor_id == 3) {
+      // Sensor de luz (puede ser sensor_id 2 o 3 según configuración del esclavo)
+      lastLightValue = measure;
+      lastLightState = (measure < LIGHT_THRESHOLD) ? 1 : 0;
+      Serial.print("  -> Estado luz: ");
+      Serial.println(lastLightState ? "OSCURO (1)" : "ILUMINADO (0)");
+    } else if (sensor_id == 0 || sensor_id == 1) {
+      // Sensores de distancia (ultrasonidos)
+      if (sensor_id == 0) {
+        lastDistance1 = measure;
+      } else {
+        lastDistance2 = measure;
+      }
+      // Actualizar estado: 1 si alguno detecta objeto cerca
+      if (lastDistance1 < DISTANCE_THRESHOLD || lastDistance2 < DISTANCE_THRESHOLD) {
+        lastDistanceState = 1;
+      } else {
+        lastDistanceState = 0;
+      }
+      Serial.print("  -> Estado distancia: ");
+      Serial.println(lastDistanceState ? "OBJETO CERCA (1)" : "LIBRE (0)");
+    }
+    
     return;
   }
 
