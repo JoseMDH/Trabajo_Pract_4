@@ -7,15 +7,11 @@
 #define SRF02_I2C_ADDRESS byte((0xF2)>>1)
 
 #define DELAY 200 // ms
-#define MINWAIT 70 // ms
 #define PR A1
 
 uint8_t checkUS(uint16_t us1, uint16_t us2){
-  uint8_t result = 0;
-
-  if (us1 > USLimit) result |= 0x01;
-  if (us2 > USLimit) result |= 0x02;
-
+  uint8_t result = LOW;
+  if (us1 > USLimit || us2 > USLimit) result = HIGH;
   return result;
 }
 
