@@ -17,14 +17,14 @@ void loop(){
   }
 
   delay(1000);
-  uint8_t data[2];
-  data[0] = 0;
-  data[1] = 1;
-  lora_send(data,2);
+  uint8_t data[3];
+  data[0] = 1;
+  data[1] = '0';
+  data[2] = 1;
+  lora_send(data,3);
   delay(1000);
-  data[0] = 0;
   data[1] = 0;
-  lora_send(data,2);
+  lora_send(data,3);
 }
 
 void publish()

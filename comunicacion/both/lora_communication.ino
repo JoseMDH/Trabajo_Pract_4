@@ -23,7 +23,6 @@ bool lora_init() {
 // =====================
 // TX
 // =====================
-uint16_t count = 0;
 bool lora_send(const uint8_t *data, uint8_t len)
 {
   if (!data || len == 0 )
@@ -31,14 +30,10 @@ bool lora_send(const uint8_t *data, uint8_t len)
   LoRa.beginPacket();
   LoRa.write(LORA_REMOTE_ADDRESS);
   LoRa.write(LORA_LOCAL_ADDRESS);
-  LoRa.write((uint8_t)(count >> 8));   // Añadimos el Id del mensaje (MSB primero)
-  LoRa.write((uint8_t)(count & 0xFF)); 
   LoRa.write(len);
   LoRa.write(data, (size_t)len);
   LoRa.endPacket();   // bloqueante, SINO (true)
   LoRa.receive();
-
-  count++;
   return true;
 }
 
