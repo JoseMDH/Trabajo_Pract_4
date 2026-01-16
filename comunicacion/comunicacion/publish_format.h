@@ -9,8 +9,8 @@ Serial format.
 [1] payload flag
 */
 
-#define LIGHT '0'
-#define DISTANCE '1'
+#define LIGHT 0
+#define DISTANCE 1
 
 #define USLimit 100 //centimeters
 #define PRLimit 500 // lumens

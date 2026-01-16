@@ -64,6 +64,10 @@ void loop(){
     publish();
   }
 
+  //test()
+}
+
+void test(){
   // Test: enviar mensajes de prueba cada 2 segundos
   static uint32_t lastSend = 0;
 
