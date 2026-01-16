@@ -101,6 +101,24 @@ typedef struct {
 volatile LoRaRxMessage_t loraRxMsg = {false, {0}, {0}, 0};
 
 // =====================
+// Mapeo de topics LoRa -> MQTT
+// =====================
+/**
+ * Convierte topics internos a topics MQTT legibles
+ */
+const char* mapTopic(const char* inTopic) {
+  if (strcmp(inTopic, "sensor/0") == 0) return "sensores/puerta";
+  if (strcmp(inTopic, "sensor/1") == 0) return "sensores/luz";
+  if (strcmp(inTopic, "sensor/2") == 0) return "sensores/temperatura";
+  if (strcmp(inTopic, "sensor/3") == 0) return "sensores/humedad";
+  if (strcmp(inTopic, "sensor/4") == 0) return "sensores/movimiento";
+  if (strcmp(inTopic, "actuator/0") == 0) return "actuadores/led";
+  if (strcmp(inTopic, "actuator/1") == 0) return "actuadores/servo";
+  // Si no hay mapeo, devolver el original
+  return inTopic;
+}
+
+// =====================
 // Funciones de protocolo serial
 // =====================
 
@@ -311,17 +329,21 @@ void onLoRaReceive(int packetSize) {
   }
   
   // Separar topic y payload
-  // Buscar el null terminator del topic
+  // Formato esperado: topicLen(1) + topic(topicLen) + payload
   uint8_t topicLen = buffer[0];
-  //if(topicLen < MAX_TOPIC_LEN) //print error or skip
-  uint8_t charCount = 0;
-  while (charCount < topicLen) {
-    ((char*)loraRxMsg.topic)[charCount + 1] = buffer[charCount + 1];
-    charCount++;
+  
+  // Validar topicLen
+  if (topicLen > MAX_TOPIC_LEN || topicLen >= idx) {
+    return;  // Topic inválido
+  }
+  
+  // Copiar topic
+  for (uint8_t i = 0; i < topicLen; i++) {
+    ((char*)loraRxMsg.topic)[i] = buffer[1 + i];
   }
   ((char*)loraRxMsg.topic)[topicLen] = '\0';
   
-  uint8_t payloadStart = topicLen + 1;  // Después del null terminator
+  uint8_t payloadStart = 1 + topicLen;  // Después del topicLen + topic
   uint8_t payloadLen = (payloadStart < idx) ? (idx - payloadStart) : 0;
   
   // Obtener RSSI y SNR
@@ -418,11 +440,16 @@ void loop() {
     loraRxMsg.pending = false;  // Marcar como procesado
     interrupts();
     
+    // Mapear topic a nombre legible
+    const char* mappedTopic = mapTopic(topic);
+    
     // Ahora es seguro hacer I/O serial
-    sendSerialMessage(MSG_TYPE_LORA_RX, topic, payload, payloadLen);
+    sendSerialMessage(MSG_TYPE_LORA_RX, mappedTopic, payload, payloadLen);
     
     SERIAL_DEBUG.print("LoRa RX: topic=");
     SERIAL_DEBUG.print(topic);
+    SERIAL_DEBUG.print(" -> ");
+    SERIAL_DEBUG.print(mappedTopic);
     SERIAL_DEBUG.print(" len=");
     SERIAL_DEBUG.println(payloadLen);
   }
