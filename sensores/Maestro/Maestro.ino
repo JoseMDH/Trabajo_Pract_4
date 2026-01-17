@@ -42,7 +42,7 @@
 uint16_t loraMessageCounter = 0;
 unsigned long lastLoraSendTime = 0;
 unsigned long txStartTime = 0;
-const unsigned long LORA_SEND_INTERVAL = 1000;  // 1 segundo entre envíos
+const unsigned long LORA_SEND_INTERVAL = 500;  // 500ms entre actualizaciones (más rápido)
 
 // Flag para alternar entre sensores: false = luz, true = distancia
 volatile bool sendDistanceNext = false;
@@ -51,10 +51,11 @@ volatile bool sendDistanceNext = false;
 struct SensorMessage {
   uint8_t payload;
   bool pending;
+  uint8_t lastSentValue;  // Último valor enviado para detectar cambios
 };
 
-SensorMessage lightMsg = {'0', true};   // Empezar con pending=true
-SensorMessage distanceMsg = {'0', true}; // Empezar con pending=true
+SensorMessage lightMsg = {'0', false, 0xFF};   // pending=false hasta primer cambio
+SensorMessage distanceMsg = {'0', false, 0xFF}; // 0xFF = nunca enviado
 
 volatile bool loraTxDone = true;  // Libre para enviar
 
@@ -137,37 +138,41 @@ void processLoraQueue() {
   if (!loraTxDone && (millis() - txStartTime > 3000)) {
     Serial.println("[LoRa] Watchdog: TX timeout - Resetting flag");
     loraTxDone = true;
-    // Opcional: alternar turno para no atascarse en un sensor roto
-    // sendDistanceNext = !sendDistanceNext; 
   }
 
   if (!loraTxDone) return;  // Aún enviando
 
   if (sendDistanceNext) {
-    // Turno de distancia (Sensor 0) - solo envía si toca este
+    // Turno de distancia (Sensor 0)
     if (distanceMsg.pending) {
       sendLoraPacket(TOPIC_DISTANCE, distanceMsg.payload);
-      // Solo confirmar si el envío arrancó (flagTx ocupado)
       if (!loraTxDone) {
         Serial.print("[LoRa TX] ");
         Serial.print(TOPIC_DISTANCE);
         Serial.print(" = ");
         Serial.println((char)distanceMsg.payload);
+        distanceMsg.lastSentValue = distanceMsg.payload;  // Guardar último enviado
         distanceMsg.pending = false;
       }
+    } else {
+      // No hay nada pendiente, pasar turno
+      sendDistanceNext = false;
     }
   } else {
-    // Turno de luz (Sensor 1) - solo envía si toca este
+    // Turno de luz (Sensor 1)
     if (lightMsg.pending) {
       sendLoraPacket(TOPIC_LIGHT, lightMsg.payload);
-      // Solo confirmar si el envío arrancó (flagTx ocupado)
       if (!loraTxDone) {
         Serial.print("[LoRa TX] ");
         Serial.print(TOPIC_LIGHT);
         Serial.print(" = ");
         Serial.println((char)lightMsg.payload);
+        lightMsg.lastSentValue = lightMsg.payload;  // Guardar último enviado
         lightMsg.pending = false;
       }
+    } else {
+      // No hay nada pendiente, pasar turno
+      sendDistanceNext = true;
     }
   }
 }
@@ -222,29 +227,40 @@ void loop() {
 }
 
 /**
- * Actualiza los mensajes pendientes para ambos sensores
- * Sobrescribe el valor anterior (tiempo real)
+ * Actualiza los mensajes pendientes - SOLO si hay cambios o es primera vez
+ * Esto evita saturar el canal con datos repetidos
  */
 void sendLoRaUpdates() {
-  // Actualizar mensaje de luz
-  lightMsg.payload = (lastLightState == 1) ? '1' : '0';
-  lightMsg.pending = true;
-  Serial.print("[LoRa UPD] luz = ");
-  Serial.print((char)lightMsg.payload);
-  Serial.print(" (raw: ");
-  Serial.print(lastLightValue);
-  Serial.println(")");
+  uint8_t newLightPayload = (lastLightState == 1) ? '1' : '0';
+  uint8_t newDistPayload = (lastDistanceState == 1) ? '1' : '0';
+  
+  // Solo enviar luz si cambió o es primera vez (lastSentValue == 0xFF)
+  if (newLightPayload != lightMsg.lastSentValue) {
+    lightMsg.payload = newLightPayload;
+    lightMsg.pending = true;
+    Serial.print("[LoRa] Cambio LUZ: ");
+    Serial.print((char)lightMsg.lastSentValue);
+    Serial.print(" -> ");
+    Serial.print((char)newLightPayload);
+    Serial.print(" (raw: ");
+    Serial.print(lastLightValue);
+    Serial.println(")");
+  }
 
-  // Actualizar mensaje de distancia
-  distanceMsg.payload = (lastDistanceState == 1) ? '1' : '0';
-  distanceMsg.pending = true;
-  Serial.print("[LoRa UPD] dist = ");
-  Serial.print((char)distanceMsg.payload);
-  Serial.print(" (d1: ");
-  Serial.print(lastDistance1);
-  Serial.print("cm, d2: ");
-  Serial.print(lastDistance2);
-  Serial.println("cm)");
+  // Solo enviar distancia si cambió o es primera vez
+  if (newDistPayload != distanceMsg.lastSentValue) {
+    distanceMsg.payload = newDistPayload;
+    distanceMsg.pending = true;
+    Serial.print("[LoRa] Cambio DIST: ");
+    Serial.print((char)distanceMsg.lastSentValue);
+    Serial.print(" -> ");
+    Serial.print((char)newDistPayload);
+    Serial.print(" (d1: ");
+    Serial.print(lastDistance1);
+    Serial.print("cm, d2: ");
+    Serial.print(lastDistance2);
+    Serial.println("cm)");
+  }
 }
 
 void parseCommand(String input) {

@@ -207,5 +207,5 @@ void onReceive(int packetSize) {
 }
 
 void loop() {
-  LoRa.receive();
+
 }

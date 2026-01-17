@@ -56,6 +56,12 @@ TOPICS_TO_LORA = [
 ACTUADOR_ADDRESS = 0x06
 
 # =====================
+# Control de rate limiting (evitar saturar LoRa)
+# =====================
+MIN_TX_INTERVAL = 0.15  # Mínimo 150ms entre envíos
+DUPLICATE_WINDOW = 2.0  # Ignorar duplicados en ventana de 2 segundos
+
+# =====================
 # Constantes del protocolo serial
 # =====================
 STX = 0x02
@@ -239,6 +245,10 @@ class MQTTLoRaBridge:
         self.serial_proto = SerialProtocol(SERIAL_PORT, SERIAL_BAUD)
         self.mqtt_client = mqtt.Client()
         self.mqtt_connected = False
+        # Rate limiting
+        self.last_tx_time = 0
+        self.last_values = {}  # topic -> (valor, timestamp) para detectar duplicados
+        self.tx_lock = threading.Lock()
         
     def start(self):
         """Inicia el bridge"""
@@ -298,6 +308,30 @@ class MQTTLoRaBridge:
         print(f"\n{'='*50}")
         print(f"[MQTT] Mensaje recibido en topic: {topic}")
         print(f"[MQTT] Payload: {payload.decode('utf-8', errors='replace')}")
+        
+        # Rate limiting y detección de duplicados
+        with self.tx_lock:
+            now = time.time()
+            
+            # Verificar duplicados (mismo topic + mismo valor en ventana de tiempo)
+            cache_key = f"{topic}"
+            if cache_key in self.last_values:
+                last_payload, last_time = self.last_values[cache_key]
+                if last_payload == payload and (now - last_time) < DUPLICATE_WINDOW:
+                    print(f"[Bridge] IGNORADO: Duplicado reciente ({now - last_time:.2f}s)")
+                    print(f"{'='*50}\n")
+                    return
+            
+            # Rate limiting: esperar si enviamos hace poco
+            time_since_last = now - self.last_tx_time
+            if time_since_last < MIN_TX_INTERVAL:
+                wait_time = MIN_TX_INTERVAL - time_since_last
+                print(f"[Bridge] Rate limit: esperando {wait_time*1000:.0f}ms")
+                time.sleep(wait_time)
+            
+            # Actualizar cache y timestamp
+            self.last_values[cache_key] = (payload, now)
+            self.last_tx_time = time.time()
         
         # Traducir mensajes de sensores al formato del actuador (tipo + valor)
         if topic == TOPIC_SENSOR_PUERTA:

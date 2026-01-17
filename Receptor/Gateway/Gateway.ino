@@ -88,6 +88,10 @@ volatile bool txDoneFlag = true;
 volatile bool transmitting = false;
 uint16_t msgCounter = 0;
 
+// Control de tiempo para evitar colisiones
+unsigned long lastTxTime = 0;
+const unsigned long TX_COOLDOWN_MS = 100;  // Mínimo entre transmisiones
+
 // =====================
 // Buffer para recepción LoRa (evitar I/O en ISR)
 // =====================
@@ -99,6 +103,53 @@ typedef struct {
 } LoRaRxMessage_t;
 
 volatile LoRaRxMessage_t loraRxMsg = {false, {0}, {0}, 0};
+
+// =====================
+// Cola de transmisión LoRa (para no bloquear)
+// =====================
+#define TX_QUEUE_SIZE 4
+
+typedef struct {
+  uint8_t destination;
+  uint8_t payload[MAX_PAYLOAD_LEN];
+  uint8_t payloadLen;
+  bool rawMode;  // true = solo payload, false = con topic
+  char topic[MAX_TOPIC_LEN + 1];
+  bool pending;
+} TxQueueItem_t;
+
+TxQueueItem_t txQueue[TX_QUEUE_SIZE];
+uint8_t txQueueHead = 0;
+uint8_t txQueueTail = 0;
+
+/**
+ * Añade un mensaje a la cola de transmisión
+ */
+bool enqueueTxMessage(uint8_t dest, const char* topic, const uint8_t* payload, uint8_t len, bool rawMode) {
+  uint8_t nextHead = (txQueueHead + 1) % TX_QUEUE_SIZE;
+  if (nextHead == txQueueTail) {
+    // Cola llena
+    return false;
+  }
+  
+  txQueue[txQueueHead].destination = dest;
+  txQueue[txQueueHead].payloadLen = len;
+  txQueue[txQueueHead].rawMode = rawMode;
+  memcpy(txQueue[txQueueHead].payload, payload, len);
+  if (topic) {
+    strncpy(txQueue[txQueueHead].topic, topic, MAX_TOPIC_LEN);
+  } else {
+    txQueue[txQueueHead].topic[0] = '\0';
+  }
+  txQueue[txQueueHead].pending = true;
+  txQueueHead = nextHead;
+  return true;
+}
+
+/**
+ * Procesa la cola de transmisión (llamar desde loop)
+ */
+void processTxQueue();
 
 // =====================
 // Mapeo de topics LoRa -> MQTT
@@ -368,6 +419,46 @@ void onLoRaReceive(int packetSize) {
  */
 void onTxDone() {
   txDoneFlag = true;
+  lastTxTime = millis();
+}
+
+/**
+ * Procesa la cola de transmisión (no bloqueante)
+ */
+void processTxQueue() {
+  // Verificar si terminó la transmisión anterior
+  if (transmitting && txDoneFlag) {
+    transmitting = false;
+    LoRa.receive();  // Reactivar recepción
+  }
+  
+  // Si estamos transmitiendo, salir
+  if (transmitting) return;
+  
+  // Cooldown entre transmisiones para evitar saturar el canal
+  if (millis() - lastTxTime < TX_COOLDOWN_MS) return;
+  
+  // Verificar si hay mensajes en cola
+  if (txQueueTail == txQueueHead) return;  // Cola vacía
+  
+  TxQueueItem_t* item = &txQueue[txQueueTail];
+  if (!item->pending) {
+    txQueueTail = (txQueueTail + 1) % TX_QUEUE_SIZE;
+    return;
+  }
+  
+  // Transmitir
+  transmitting = true;
+  txDoneFlag = false;
+  
+  if (item->rawMode) {
+    sendLoRaMessageRaw(item->destination, item->payload, item->payloadLen);
+  } else {
+    sendLoRaMessage(item->destination, item->topic, item->payload, item->payloadLen);
+  }
+  
+  item->pending = false;
+  txQueueTail = (txQueueTail + 1) % TX_QUEUE_SIZE;
 }
 
 // =====================
@@ -465,68 +556,42 @@ void loop() {
     }
   }
   
-  // Intentar parsear mensaje
+  // Intentar parsear mensaje serial
   SerialMessage_t msg;
   if (parseSerialMessage(&msg)) {
     if (msg.type == MSG_TYPE_LORA_TX) {
-      // Transmitir por LoRa
-      if (!transmitting) {
-        transmitting = true;
-        txDoneFlag = false;
+      // Extraer destino del topic si tiene formato "@XX/..."
+      uint8_t destination = defaultDestination;
+      char* topicToSend = msg.topic;
+      bool rawMode = false;
+      
+      if (msg.topicLen > 3 && msg.topic[0] == '@') {
+        char hexAddr[3] = {msg.topic[1], msg.topic[2], '\0'};
+        destination = (uint8_t)strtol(hexAddr, NULL, 16);
+        rawMode = true;  // Modo raw para actuador
         
-        // Extraer destino del topic si tiene formato "@XX/..."
-        uint8_t destination = defaultDestination;
-        char* topicToSend = msg.topic;
-        bool rawMode = false;  // Modo raw: enviar solo payload sin topic
-        
-        if (msg.topicLen > 3 && msg.topic[0] == '@') {
-          char hexAddr[3] = {msg.topic[1], msg.topic[2], '\0'};
-          destination = (uint8_t)strtol(hexAddr, NULL, 16);
-          
-          // Si el topic empieza con @XX/, es para el actuador -> modo raw
-          // El actuador espera: tipo(1) + valor(1), sin topic
-          rawMode = true;
-          
-          // Mover el puntero del topic después de "@XX/"
-          if (msg.topicLen > 4 && msg.topic[3] == '/') {
-            topicToSend = msg.topic + 4;
-          } else {
-            topicToSend = msg.topic + 3;
-          }
-          
-          SERIAL_DEBUG.print("Destino: 0x");
-          SERIAL_DEBUG.println(destination, HEX);
-          SERIAL_DEBUG.print("Modo raw: ");
-          SERIAL_DEBUG.println(rawMode ? "SI" : "NO");
-        }
-        
-        if (rawMode) {
-          // Modo raw: enviar solo el payload directamente (para actuador)
-          SERIAL_DEBUG.print("Enviando raw a 0x");
-          SERIAL_DEBUG.print(destination, HEX);
-          SERIAL_DEBUG.print(": ");
-          for (int i = 0; i < msg.payloadLen; i++) {
-            SERIAL_DEBUG.print(msg.payload[i], HEX);
-            SERIAL_DEBUG.print(" ");
-          }
-          SERIAL_DEBUG.println();
-          
-          sendLoRaMessageRaw(destination, msg.payload, msg.payloadLen);
+        if (msg.topicLen > 4 && msg.topic[3] == '/') {
+          topicToSend = msg.topic + 4;
         } else {
-          // Modo normal: enviar topic + payload
-          sendLoRaMessage(destination, topicToSend, msg.payload, msg.payloadLen);
+          topicToSend = msg.topic + 3;
         }
         
+        SERIAL_DEBUG.print("Encolando TX -> 0x");
+        SERIAL_DEBUG.print(destination, HEX);
+        SERIAL_DEBUG.print(" raw=");
+        SERIAL_DEBUG.println(rawMode ? "SI" : "NO");
+      }
+      
+      // Encolar mensaje (no bloqueante)
+      if (enqueueTxMessage(destination, topicToSend, msg.payload, msg.payloadLen, rawMode)) {
         sendAck();
       } else {
-        sendNack("TX busy");
+        sendNack("Queue full");
+        SERIAL_DEBUG.println("ERROR: Cola TX llena!");
       }
     }
   }
   
-  // Verificar si terminó la transmisión
-  if (transmitting && txDoneFlag) {
-    transmitting = false;
-    LoRa.receive();  // Reactivar recepción
-  }
+  // Procesar cola de transmisión (no bloqueante)
+  processTxQueue();
 }
