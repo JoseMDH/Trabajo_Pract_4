@@ -59,16 +59,29 @@ void onReceive(int packetSize);  // prototipo arriba
 
 void setup() {
   Serial.begin(9600);
+  while (!Serial) { ; }  // Esperar a que Serial esté listo
+  delay(1000);  // Dar tiempo extra para inicialización
+  
+  Serial.println("\n\n=== INICIANDO ACTUADOR ===");
 
   miServo.attach(pinServo);
   miServo.write(posicion);
 
   pinMode(pinLed, OUTPUT);
   digitalWrite(pinLed, LOW);
+  Serial.println("LED y Servo configurados OK");
 
+  Serial.println("Inicializando LoRa...");
   if (!LoRa.begin(868E6)) {
-    Serial.println("Error LoRa");
-    while (1);
+    Serial.println("ERROR: No se pudo inicializar LoRa!");
+    Serial.println("Verifica las conexiones del modulo LoRa");
+    while (1) {
+      // Parpadear LED para indicar error
+      digitalWrite(pinLed, HIGH);
+      delay(200);
+      digitalWrite(pinLed, LOW);
+      delay(200);
+    }
   }
   
   // Configuración LoRa (igual que Gateway)
@@ -149,6 +162,7 @@ void onReceive(int packetSize) {
   if (recipient != localAddress && recipient != 0xFF) {
     Serial.println("-> IGNORADO: No es para mi");
     Serial.println("=======================================\n");
+    LoRa.receive();  // Volver a escuchar
     return;
   }
 
@@ -157,12 +171,14 @@ void onReceive(int packetSize) {
     Serial.print("-> IGNORADO: Emisor no autorizado 0x");
     Serial.println(sender, HEX);
     Serial.println("=======================================\n");
+    LoRa.receive();  // Volver a escuchar
     return;
   }
 
   if (rawLen < 2) {
     Serial.println("-> ERROR: Faltan bytes de tipo/valor");
     Serial.println("=======================================\n");
+    LoRa.receive();  // Volver a escuchar
     return;
   }
 
@@ -185,8 +201,11 @@ void onReceive(int packetSize) {
   }
   
   Serial.println("=======================================\n");
+  
+  // IMPORTANTE: Volver a activar modo recepción
+  LoRa.receive();
 }
 
 void loop() {
-  
+  LoRa.receive();
 }
