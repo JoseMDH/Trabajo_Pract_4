@@ -11,6 +11,7 @@ from flask_socketio import SocketIO
 import paho.mqtt.client as mqtt
 import threading
 import json
+import time
 
 # =====================
 # Configuración
@@ -21,11 +22,14 @@ MQTT_PORT = 1883
 # Topics MQTT
 TOPIC_SENSOR_LUZ = "sensores/luz"
 TOPIC_SENSOR_PUERTA = "sensores/puerta"
+TOPIC_ACTUADOR_LUZ = "actuador/luz" # Posible correccion si el dashboard debe publicar aqui
+TOPIC_ACTUADOR_PUERTA = "actuador/puerta"
 
 # Estado inicial
 estado = {
     "luz": None,
-    "puerta": None
+    "puerta": None,
+    "mqtt_connected": False
 }
 
 # =====================
@@ -33,7 +37,8 @@ estado = {
 # =====================
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secreto_sensores_2024'
-socketio = SocketIO(app, cors_allowed_origins="*")
+# cors_allowed_origins="*" permite conexiones desde cualquier IP/dominio
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Cliente MQTT
 mqtt_client = mqtt.Client()
@@ -41,15 +46,25 @@ mqtt_client = mqtt.Client()
 # =====================
 # Callbacks MQTT
 # =====================
-def on_mqtt_connect(client, userdata, flags, rc):
-    """Cuando se conecta al broker MQTT"""
+def on_mqtt_connect(client, userdata, flags, rc, properties=None):
+    """Cuando se conecta al broker MQTT (compatible v1 y v2)"""
     if rc == 0:
-        print(f"[MQTT] Conectado al broker {MQTT_BROKER}")
+        print(f"[MQTT] ✅ Conectado al broker {MQTT_BROKER}")
         client.subscribe(TOPIC_SENSOR_LUZ)
         client.subscribe(TOPIC_SENSOR_PUERTA)
         print(f"[MQTT] Suscrito a: {TOPIC_SENSOR_LUZ}, {TOPIC_SENSOR_PUERTA}")
+        
+        estado["mqtt_connected"] = True
+        socketio.emit('mqtt_status', {'connected': True})
     else:
-        print(f"[MQTT] Error de conexión, código: {rc}")
+        print(f"[MQTT] ❌ Error de conexión, código: {rc}")
+        estado["mqtt_connected"] = False
+        socketio.emit('mqtt_status', {'connected': False})
+
+def on_mqtt_disconnect(client, userdata, rc, properties=None):
+    print(f"[MQTT] Desconectado, código: {rc}")
+    estado["mqtt_connected"] = False
+    socketio.emit('mqtt_status', {'connected': False})
 
 def on_mqtt_message(client, userdata, msg):
     """Cuando se recibe un mensaje MQTT"""
@@ -58,10 +73,10 @@ def on_mqtt_message(client, userdata, msg):
         payload = msg.payload.decode('utf-8').strip()
         valor = int(payload)
     except (ValueError, UnicodeDecodeError):
-        print(f"[MQTT] Error parseando mensaje: {msg.payload}")
+        # Ignorar mensajes no numericos
         return
     
-    print(f"[MQTT] Recibido: {topic} = {valor}")
+    print(f"[MQTT] 📩 Recibido: {topic} = {valor}")
     
     if topic == TOPIC_SENSOR_LUZ:
         estado["luz"] = valor
@@ -84,9 +99,10 @@ def index():
 @socketio.on('connect')
 def handle_connect():
     """Cuando un cliente web se conecta"""
-    print("[Web] Cliente conectado")
+    print(f"[Web] 🌐 Cliente conectado")
     # Enviar estado actual
     socketio.emit('estado_inicial', estado)
+    socketio.emit('mqtt_status', {'connected': estado["mqtt_connected"]})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -97,29 +113,36 @@ def handle_disconnect():
 def handle_publicar_luz(data):
     """Publicar valor en topic de luz"""
     valor = data.get('valor', 0)
-    print(f"[Web] Publicando luz: {valor}")
+    print(f"[Web] 📤 Publicando luz: {valor}")
+    # Publicamos en el mismo topic de sensor para simular o controlar
     mqtt_client.publish(TOPIC_SENSOR_LUZ, str(valor))
 
 @socketio.on('publicar_puerta')
 def handle_publicar_puerta(data):
     """Publicar valor en topic de puerta"""
     valor = data.get('valor', 0)
-    print(f"[Web] Publicando puerta: {valor}")
+    print(f"[Web] 📤 Publicando puerta: {valor}")
+    # Publicamos en el mismo topic de sensor
     mqtt_client.publish(TOPIC_SENSOR_PUERTA, str(valor))
 
 # =====================
-# Iniciar MQTT en hilo separado
+# Configurar MQTT de forma robusta
 # =====================
-def iniciar_mqtt():
-    """Inicia la conexión MQTT"""
-    mqtt_client.on_connect = on_mqtt_connect
+def configurar_mqtt():
+    # Asignar callbacks - manejamos argumentos variables para compatibilidad paho v1/v2
+    mqtt_client.on_connect = lambda c, u, f, rc, p=None: on_mqtt_connect(c, u, f, rc, p)
     mqtt_client.on_message = on_mqtt_message
-    
+    mqtt_client.on_disconnect = lambda c, u, rc, p=None: on_mqtt_disconnect(c, u, rc, p)
+
+    # loop_start() maneja el hilo de red automáticamente y reconexiones
     try:
         mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        mqtt_client.loop_forever()
+        mqtt_client.loop_start()
+        print("[MQTT] Cliente iniciado en segundo plano")
+    except ConnectionRefusedError:
+        print(f"[MQTT] ❌ No se pudo conectar a {MQTT_BROKER}:{MQTT_PORT}. ¿Está corriendo Mosquitto?")
     except Exception as e:
-        print(f"[MQTT] Error: {e}")
+        print(f"[MQTT] ❌ Error iniciando cliente: {e}")
 
 # =====================
 # Main
@@ -129,12 +152,11 @@ if __name__ == '__main__':
     print("🏠 Dashboard de Sensores IoT")
     print("="*50)
     
-    # Iniciar MQTT en hilo separado
-    mqtt_thread = threading.Thread(target=iniciar_mqtt, daemon=True)
-    mqtt_thread.start()
+    configurar_mqtt()
     
-    print(f"[Server] Iniciando en http://localhost:5000")
+    print(f"[Server] Iniciando servidor web...")
+    print(f"[Server] Accede en: http://0.0.0.0:5000")
     print("Presiona Ctrl+C para salir\n")
     
-    # Iniciar servidor web
+    # Usar threading mode de socketio para compatibilidad
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)
