@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏠 Dashboard Sensores IoT</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .emoji {
+            font-size: 100px;
+            margin-bottom: 20px;
+            transition: all 0.5s ease;
+        }
+        
+        .titulo-sensor {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #f0f0f0;
+        }
+        
+        .estado {
+            font-size: 1.2em;
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: inline-block;
+            margin: 15px 0;
+            font-weight: bold;
+        }
+        
+        .estado-activo {
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: #fff;
+        }
+        
+        .estado-inactivo {
+            background: linear-gradient(135deg, #636e72, #b2bec3);
+            color: #fff;
+        }
+        
+        .estado-desconocido {
+            background: linear-gradient(135deg, #fdcb6e, #e17055);
+            color: #fff;
+        }
+        
+        .controles {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            font-size: 1em;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        
+        .btn-abrir {
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: white;
+        }
+        
+        .btn-abrir:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0,184,148,0.4);
+        }
+        
+        .btn-cerrar {
+            background: linear-gradient(135deg, #d63031, #e17055);
+            color: white;
+        }
+        
+        .btn-cerrar:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(214,48,49,0.4);
+        }
+        
+        .conexion {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 0.9em;
+        }
+        
+        .conectado {
+            background: rgba(0, 184, 148, 0.3);
+            color: #00b894;
+        }
+        
+        .desconectado {
+            background: rgba(214, 48, 49, 0.3);
+            color: #d63031;
+        }
+        
+        .log {
+            margin-top: 30px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log h3 {
+            margin-bottom: 10px;
+            color: #74b9ff;
+        }
+        
+        .log-entry {
+            font-family: monospace;
+            font-size: 0.85em;
+            padding: 5px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            color: #dfe6e9;
+        }
+        
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .pulsing {
+            animation: pulse 1s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏠 Dashboard Sensores IoT</h1>
+        
+        <div id="conexion" class="conexion desconectado">
+            ⚡ Conectando al servidor...
+        </div>
+        
+        <div class="cards">
+            <!-- Sensor de Luz -->
+            <div class="card" id="card-luz">
+                <div class="emoji" id="emoji-luz">❓</div>
+                <div class="titulo-sensor">💡 Sensor de Luz</div>
+                <div class="estado estado-desconocido" id="estado-luz">Sin datos</div>
+                <div class="controles">
+                    <button class="btn btn-abrir" onclick="publicarLuz(1)">☀️ Hay luz</button>
+                    <button class="btn btn-cerrar" onclick="publicarLuz(0)">🌙 Sin luz</button>
+                </div>
+            </div>
+            
+            <!-- Sensor de Puerta -->
+            <div class="card" id="card-puerta">
+                <div class="emoji" id="emoji-puerta">❓</div>
+                <div class="titulo-sensor">🚪 Sensor de Puerta</div>
+                <div class="estado estado-desconocido" id="estado-puerta">Sin datos</div>
+                <div class="controles">
+                    <button class="btn btn-abrir" onclick="publicarPuerta(1)">🔓 Abrir</button>
+                    <button class="btn btn-cerrar" onclick="publicarPuerta(0)">🔒 Cerrar</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log">
+            <h3>📋 Registro de Eventos</h3>
+            <div id="log-entries"></div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        
+        // Elementos del DOM
+        const conexionDiv = document.getElementById('conexion');
+        const emojiLuz = document.getElementById('emoji-luz');
+        const estadoLuz = document.getElementById('estado-luz');
+        const emojiPuerta = document.getElementById('emoji-puerta');
+        const estadoPuerta = document.getElementById('estado-puerta');
+        const logEntries = document.getElementById('log-entries');
+        
+        // Conexión al servidor
+        socket.on('connect', () => {
+            conexionDiv.className = 'conexion conectado';
+            conexionDiv.innerHTML = '✅ Conectado al servidor MQTT';
+            agregarLog('Conectado al servidor');
+        });
+        
+        socket.on('disconnect', () => {
+            conexionDiv.className = 'conexion desconectado';
+            conexionDiv.innerHTML = '❌ Desconectado del servidor';
+            agregarLog('Desconectado del servidor');
+        });
+        
+        // Estado inicial
+        socket.on('estado_inicial', (estado) => {
+            if (estado.luz !== null) actualizarLuz(estado.luz);
+            if (estado.puerta !== null) actualizarPuerta(estado.puerta);
+            agregarLog('Estado inicial recibido');
+        });
+        
+        // Actualización de sensores
+        socket.on('update_luz', (data) => {
+            actualizarLuz(data.valor);
+            agregarLog(`Luz actualizada: ${data.valor === 1 ? 'HAY LUZ' : 'SIN LUZ'}`);
+        });
+        
+        socket.on('update_puerta', (data) => {
+            actualizarPuerta(data.valor);
+            agregarLog(`Puerta actualizada: ${data.valor === 1 ? 'ABRIR' : 'CERRAR'}`);
+        });
+        
+        // Funciones de actualización de UI
+        function actualizarLuz(valor) {
+            if (valor === 1) {
+                emojiLuz.textContent = '☀️';
+                estadoLuz.textContent = 'Hay luz exterior';
+                estadoLuz.className = 'estado estado-activo';
+            } else {
+                emojiLuz.textContent = '🌙';
+                estadoLuz.textContent = 'Sin luz / Oscuro';
+                estadoLuz.className = 'estado estado-inactivo';
+            }
+            
+            // Efecto de pulso
+            emojiLuz.classList.add('pulsing');
+            setTimeout(() => emojiLuz.classList.remove('pulsing'), 1000);
+        }
+        
+        function actualizarPuerta(valor) {
+            if (valor === 1) {
+                emojiPuerta.textContent = '🚶';
+                estadoPuerta.textContent = 'Alguien en puerta - ABRIR';
+                estadoPuerta.className = 'estado estado-activo';
+            } else {
+                emojiPuerta.textContent = '🔒';
+                estadoPuerta.textContent = 'Puerta cerrada';
+                estadoPuerta.className = 'estado estado-inactivo';
+            }
+            
+            // Efecto de pulso
+            emojiPuerta.classList.add('pulsing');
+            setTimeout(() => emojiPuerta.classList.remove('pulsing'), 1000);
+        }
+        
+        // Funciones para publicar
+        function publicarLuz(valor) {
+            socket.emit('publicar_luz', { valor: valor });
+            agregarLog(`Enviado luz: ${valor}`);
+        }
+        
+        function publicarPuerta(valor) {
+            socket.emit('publicar_puerta', { valor: valor });
+            agregarLog(`Enviado puerta: ${valor}`);
+        }
+        
+        // Agregar entrada al log
+        function agregarLog(mensaje) {
+            const hora = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${hora}] ${mensaje}`;
+            logEntries.insertBefore(entry, logEntries.firstChild);
+            
+            // Mantener solo las últimas 20 entradas
+            while (logEntries.children.length > 20) {
+                logEntries.removeChild(logEntries.lastChild);
+            }
+        }
+        
+        // Mensaje inicial
+        agregarLog('Dashboard iniciado');
+    </script>
+</body>
+</html>
