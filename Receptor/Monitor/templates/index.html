@@ -247,8 +247,8 @@
                 <div class="titulo-sensor">💡 Sensor de Luz</div>
                 <div class="estado estado-desconocido" id="estado-luz">Sin datos</div>
                 <div class="controles">
-                    <button class="btn btn-abrir" onclick="publicarLuz(1)">☀️ Hay Luz (1)</button>
-                    <button class="btn btn-cerrar" onclick="publicarLuz(0)">🌙 Sin Luz (0)</button>
+                    <button class="btn btn-abrir" onclick="publicarLuz(1)">🌙 Encender (1)</button>
+                    <button class="btn btn-cerrar" onclick="publicarLuz(0)">☀️ Apagar (0)</button>
                 </div>
             </div>
             
@@ -272,8 +272,10 @@
     
     <script>
         // Conexión automática al host que sirve la página
+        // DEBUG: Forzamos `polling` para comprobar si la conexión funciona
+        // Cambia a ['websocket','polling'] cuando habilites websockets en el servidor
         const socket = io({
-            transports: ['websocket', 'polling'], // Forzar transporte más robusto
+            transports: ['polling'], // usar long-polling para depuración
             reconnection: true,
             reconnectionAttempts: 10
         });
@@ -336,7 +338,7 @@
         // --- Actualizaciones en tiempo real ---
         socket.on('update_luz', (data) => {
             actualizarLuz(data.valor);
-            agregarLog(`Sensor Luz: ${data.valor === 1 ? 'ENCENDIDO' : 'APAGADO'}`);
+            agregarLog(`Sensor Luz: ${data.valor === 1 ? 'Encendido (1)' : 'Apagado (0)'} `);
         });
         
         socket.on('update_puerta', (data) => {
@@ -351,13 +353,14 @@
             void emojiLuz.offsetWidth; // trigger reflow
             emojiLuz.classList.add('pulsing');
 
+            // NOTE: value semantics: 1 = oscuro (interior light on), 0 = luz exterior
             if (valor == 1) {
-                emojiLuz.textContent = '☀️';
-                estadoLuz.textContent = 'Hay luz (1)';
+                emojiLuz.textContent = '🌙';
+                estadoLuz.textContent = 'Oscuro (1)';
                 estadoLuz.className = 'estado estado-activo';
             } else {
-                emojiLuz.textContent = '🌙';
-                estadoLuz.textContent = 'Oscuro (0)';
+                emojiLuz.textContent = '☀️';
+                estadoLuz.textContent = 'Hay luz exterior (0)';
                 estadoLuz.className = 'estado estado-inactivo';
             }
         }
