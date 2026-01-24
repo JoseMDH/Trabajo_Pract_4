@@ -223,7 +223,25 @@
             border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.2); 
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Priorizar fuentes emoji en fallbacks para Linux/Windows/macOS */
+        body {
+            font-family: 'Segoe UI', Tahoma, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+
+        .emoji {
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', system-ui, sans-serif;
+        }
+
+        /* Si usamos Twemoji, estas imágenes respetarán el tamaño en em. */
+        img.emoji, svg.emoji {
+            display: inline-block;
+            width: 1em;
+            height: 1em;
+            vertical-align: middle;
         }
     </style>
 </head>
@@ -243,9 +261,9 @@
         <div class="cards">
             <!-- Sensor de Luz -->
             <div class="card" id="card-luz">
-                <div class="emoji" id="emoji-luz">❓</div>
+                <div class="emoji" id="emoji-luz">☀️</div>
                 <div class="titulo-sensor">💡 Sensor de Luz</div>
-                <div class="estado estado-desconocido" id="estado-luz">Sin datos</div>
+                <div class="estado estado-inactivo" id="estado-luz">Apagada (0)</div>
                 <div class="controles">
                     <button class="btn btn-abrir" onclick="publicarLuz(1)">🌙 Encender (1)</button>
                     <button class="btn btn-cerrar" onclick="publicarLuz(0)">☀️ Apagar (0)</button>
@@ -254,9 +272,9 @@
             
             <!-- Sensor de Puerta -->
             <div class="card" id="card-puerta">
-                <div class="emoji" id="emoji-puerta">❓</div>
+                <div class="emoji" id="emoji-puerta">🔒</div>
                 <div class="titulo-sensor">🚪 Sensor de Puerta</div>
-                <div class="estado estado-desconocido" id="estado-puerta">Sin datos</div>
+                <div class="estado estado-inactivo" id="estado-puerta">Cerrada / Nadie (0)</div>
                 <div class="controles">
                     <button class="btn btn-abrir" onclick="publicarPuerta(1)">🔓 Abrir (1)</button>
                     <button class="btn btn-cerrar" onclick="publicarPuerta(0)">🔒 Cerrar (0)</button>
@@ -289,6 +307,13 @@
         const emojiPuerta = document.getElementById('emoji-puerta');
         const estadoPuerta = document.getElementById('estado-puerta');
         const logEntries = document.getElementById('log-entries');
+
+        // Helper para convertir emojis a imágenes consistentes (Twemoji) cuando está disponible
+        function parseEmojis(el) {
+            if (window.twemoji && el) {
+                try { twemoji.parse(el, { folder: 'svg', ext: '.svg' }); } catch (e) { /* no bloquear */ }
+            }
+        }
         
         // --- Conexión Web (SocketIO) ---
         socket.on('connect', () => {
@@ -360,9 +385,13 @@
                 estadoLuz.className = 'estado estado-activo';
             } else {
                 emojiLuz.textContent = '☀️';
-                estadoLuz.textContent = 'Hay luz exterior (0)';
+                estadoLuz.textContent = 'Apagada (0)';
                 estadoLuz.className = 'estado estado-inactivo';
             }
+
+            // Reemplazar con Twemoji si está disponible (asegura consistencia)
+            parseEmojis(emojiLuz);
+            parseEmojis(estadoLuz);
         }
         
         function actualizarPuerta(valor) {
@@ -379,6 +408,10 @@
                 estadoPuerta.textContent = 'Cerrada / Nadie (0)';
                 estadoPuerta.className = 'estado estado-inactivo';
             }
+
+            // Twemoji parse
+            parseEmojis(emojiPuerta);
+            parseEmojis(estadoPuerta);
         }
         
         // --- Publicación de comandos ---
@@ -412,6 +445,14 @@
         }
         
         agregarLog('Aplicación iniciada');
+    </script>
+
+    <!-- Twemoji: renderizado consistente de emojis (opcional) -->
+    <script src="https://twemoji.maxcdn.com/v/latest/twemoji.min.js"></script>
+    <script>
+        // Parse inicial para los emojis ya presentes
+        try { if (window.twemoji) twemoji.parse(document.body, { folder: 'svg', ext: '.svg' }); } catch (e) { /* noop */ }
+        // Nota: las funciones UI vuelven a llamar a parseEmojis() al actualizar estados
     </script>
 </body>
 </html>
