@@ -126,10 +126,11 @@ void sendLoraPacket(const char* topic, uint8_t payload) {
  * Procesa las colas alternando entre luz y distancia
  */
 void processLoraQueue() {
-  // Cooldown entre envíos (mínimo 200ms)
-  if (millis() - txStartTime < 200) return;
+  // Cooldown entre envíos reducido para mayor reactividad
+  if (millis() - txStartTime < 50) return;
 
-  // Debug: mostrar estado de colas cada 5 segundos
+  // Debug: mostrar estado de colas menos frecuente
+
   static unsigned long lastDebug = 0;
   if (millis() - lastDebug > 5000) {
     lastDebug = millis();
@@ -215,12 +216,8 @@ void loop() {
     parseCommand(input);
   }
 
-  // Enviar datos por LoRa cada segundo (si tenemos datos válidos)
-  unsigned long now = millis();
-  if (now - lastLoraSendTime >= LORA_SEND_INTERVAL) {
-    lastLoraSendTime = now;
-    sendLoRaUpdates();
-  }
+  // Verificar cambios en los sensores constantemente para detectar transiciones rápidas
+  sendLoRaUpdates();
 
   // Bombear cola LoRa si el último TX ha terminado
   processLoraQueue();
