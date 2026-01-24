@@ -9,6 +9,7 @@ int pinLed   = 6;
 int posicion = 10;
 uint8_t localAddress = 0x06;
 const uint8_t senderAddress = 0x05;
+const uint8_t ACK_MARKER = 0xAC;
 
 // =====================
 // Configuración LoRa (igual que Gateway)
@@ -25,19 +26,38 @@ double bandwidth_kHz[10] = {7.8E3, 10.4E3, 15.6E3, 20.8E3, 31.25E3,
 
 LoRaConfig_t nodeConfig = {6, 10, 5, 2};  // BW=62.5kHz, SF=10, CR=4/5, TxPwr=2dBm
 
+// Control de duplicados (último mensaje procesado)
+uint16_t lastProcessedMsgId = 0xFFFF;
+
+void sendAck(uint8_t dest, uint16_t msgId, uint8_t status) {
+  // Enviar ACK inmediatamente (bloqueante)
+  LoRa.beginPacket();
+  LoRa.write(dest);
+  LoRa.write(localAddress);
+  LoRa.write((uint8_t)(msgId >> 8));
+  LoRa.write((uint8_t)(msgId & 0xFF));
+  LoRa.write((uint8_t)2);
+  LoRa.write(ACK_MARKER);
+  LoRa.write(status);
+  LoRa.endPacket();  // Bloqueante para garantizar envío
+  
+  Serial.print("[ACK] Enviado msgId=");
+  Serial.print(msgId);
+  Serial.print(" status=");
+  Serial.println(status);
+}
+
 void aplicarPuerta(uint8_t v) {
-  if (v == 0) {          // 00 -> cerrar
+  if (v == 0) {
     posicion = 10;
     miServo.write(posicion);
-    Serial.println("Puerta -> CERRAR (00)");
+    Serial.println("[PUERTA] CERRAR");
   } else if (v == 1 || v == 2 || v == 3) {
     posicion = 160;
     miServo.write(posicion);
-    Serial.print("Puerta -> ABRIR/MANTENER (");
-    Serial.print(v);
-    Serial.println(")");
+    Serial.println("[PUERTA] ABRIR");
   } else {
-    Serial.print("Código puerta desconocido: ");
+    Serial.print("[PUERTA] Código desconocido: ");
     Serial.println(v);
   }
 }
@@ -45,38 +65,32 @@ void aplicarPuerta(uint8_t v) {
 void aplicarLuz(uint8_t v) {
   if (v == 1) {
     digitalWrite(pinLed, HIGH);
-    Serial.println("Luz -> ENCENDER (1)");
+    Serial.println("[LUZ] ENCENDER");
   } else if (v == 0) {
     digitalWrite(pinLed, LOW);
-    Serial.println("Luz -> APAGAR (0)");
+    Serial.println("[LUZ] APAGAR");
   } else {
-    Serial.print("Código luz desconocido: ");
+    Serial.print("[LUZ] Código desconocido: ");
     Serial.println(v);
   }
 }
 
-void onReceive(int packetSize);  // prototipo arriba
-
 void setup() {
   Serial.begin(9600);
-  while (!Serial) { ; }  // Esperar a que Serial esté listo
-  delay(1000);  // Dar tiempo extra para inicialización
+  while (!Serial) { ; }
+  delay(1000);
   
-  Serial.println("\n\n=== INICIANDO ACTUADOR ===");
+  Serial.println("\n=== ACTUADOR (POLLING MODE) ===");
 
   miServo.attach(pinServo);
   miServo.write(posicion);
 
   pinMode(pinLed, OUTPUT);
   digitalWrite(pinLed, LOW);
-  Serial.println("LED y Servo configurados OK");
 
-  Serial.println("Inicializando LoRa...");
   if (!LoRa.begin(868E6)) {
-    Serial.println("ERROR: No se pudo inicializar LoRa!");
-    Serial.println("Verifica las conexiones del modulo LoRa");
+    Serial.println("ERROR: LoRa init failed!");
     while (1) {
-      // Parpadear LED para indicar error
       digitalWrite(pinLed, HIGH);
       delay(200);
       digitalWrite(pinLed, LOW);
@@ -92,120 +106,90 @@ void setup() {
   LoRa.setSyncWord(0x12);
   LoRa.setPreambleLength(8);
   
-  // Activar callback de recepción
-  LoRa.onReceive(onReceive);
-  LoRa.receive();
-  
-  Serial.println("Actuador listo (tipo: 0=luz, 1=puerta)");
-  Serial.print("Direccion local: 0x");
+  Serial.print("Direccion: 0x");
   Serial.println(localAddress, HEX);
-  Serial.print("Config LoRa: BW=");
-  Serial.print(bandwidth_kHz[nodeConfig.bandwidth_index]/1000);
-  Serial.print("kHz, SF=");
-  Serial.print(nodeConfig.spreadingFactor);
-  Serial.print(", CR=4/");
-  Serial.print(nodeConfig.codingRate);
-  Serial.print(", TxPwr=");
-  Serial.print(nodeConfig.txPower);
-  Serial.println("dBm");
+  Serial.println("Listo para recibir comandos");
 }
 
-void onReceive(int packetSize) {
-  if (packetSize == 0) return;
+void loop() {
+  // Polling para recibir paquetes LoRa
+  int packetSize = LoRa.parsePacket();
+  if (packetSize == 0) {
+    delay(5);  // Pequeña pausa para no saturar CPU
+    return;
+  }
 
-  Serial.println("\n========== PAQUETE RECIBIDO ==========");
-  Serial.print("Tamaño del paquete: ");
-  Serial.println(packetSize);
-  Serial.print("RSSI: ");
-  Serial.print(LoRa.packetRssi());
-  Serial.println(" dBm");
-  Serial.print("SNR: ");
-  Serial.print(LoRa.packetSnr());
-  Serial.println(" dB");
-
+  // Leer cabecera
   uint8_t recipient = LoRa.read();
-  uint8_t sender    = LoRa.read();
-  uint16_t msgID    = ((uint16_t)LoRa.read() << 8) | (uint16_t)LoRa.read();
-  uint8_t  msgLen   = LoRa.read();
+  uint8_t sender = LoRa.read();
+  uint16_t msgId = ((uint16_t)LoRa.read() << 8) | (uint16_t)LoRa.read();
+  uint8_t msgLen = LoRa.read();
 
-  Serial.print("Destinatario: 0x");
-  Serial.println(recipient, HEX);
-  Serial.print("Remitente: 0x");
-  Serial.println(sender, HEX);
-  Serial.print("ID Mensaje: ");
-  Serial.println(msgID);
-  Serial.print("Longitud payload: ");
+  Serial.println("\n--- PAQUETE ---");
+  Serial.print("De: 0x");
+  Serial.print(sender, HEX);
+  Serial.print(" Para: 0x");
+  Serial.print(recipient, HEX);
+  Serial.print(" MsgId: ");
+  Serial.print(msgId);
+  Serial.print(" Len: ");
   Serial.println(msgLen);
 
-  // Leer todo el payload restante para mostrarlo
+  // Leer payload
   uint8_t rawPayload[64];
   uint8_t rawLen = 0;
   while (LoRa.available() && rawLen < 64) {
     rawPayload[rawLen++] = LoRa.read();
   }
-  
-  Serial.print("Payload raw (hex): ");
-  for (int i = 0; i < rawLen; i++) {
-    if (rawPayload[i] < 0x10) Serial.print("0");
-    Serial.print(rawPayload[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
-  
-  Serial.print("Payload raw (dec): ");
-  for (int i = 0; i < rawLen; i++) {
-    Serial.print(rawPayload[i]);
-    Serial.print(" ");
-  }
-  Serial.println();
 
+  // Verificar destinatario
   if (recipient != localAddress && recipient != 0xFF) {
-    Serial.println("-> IGNORADO: No es para mi");
-    Serial.println("=======================================\n");
-    LoRa.receive();  // Volver a escuchar
+    Serial.println("-> No es para mi");
     return;
   }
 
-  // Solo aceptar si el emisor es 0x05
+  // Verificar emisor autorizado
   if (sender != senderAddress) {
-    Serial.print("-> IGNORADO: Emisor no autorizado 0x");
+    Serial.print("-> Emisor no autorizado: 0x");
     Serial.println(sender, HEX);
-    Serial.println("=======================================\n");
-    LoRa.receive();  // Volver a escuchar
     return;
   }
 
+  // Verificar payload mínimo
   if (rawLen < 2) {
-    Serial.println("-> ERROR: Faltan bytes de tipo/valor");
-    Serial.println("=======================================\n");
-    LoRa.receive();  // Volver a escuchar
+    Serial.println("-> Payload incompleto");
+    sendAck(sender, msgId, 1);
     return;
   }
 
-  uint8_t tipo  = rawPayload[0];   // 0 = luz, 1 = puerta
+  uint8_t tipo = rawPayload[0];   // 0 = luz, 1 = puerta
   uint8_t valor = rawPayload[1];
+  uint8_t ackStatus = 0;
 
-  Serial.print("-> Tipo=");
-  Serial.print(tipo);
-  Serial.print(" (");
-  Serial.print(tipo == 0 ? "luz" : tipo == 1 ? "puerta" : "desconocido");
-  Serial.print("), Valor=");
-  Serial.println(valor);
+  // Verificar si es mensaje duplicado
+  bool isDuplicate = (msgId == lastProcessedMsgId);
+  
+  if (!isDuplicate) {
+    // Procesar comando solo si no es duplicado
+    Serial.print("-> Tipo=");
+    Serial.print(tipo == 0 ? "LUZ" : tipo == 1 ? "PUERTA" : "??");
+    Serial.print(" Valor=");
+    Serial.println(valor);
 
-  if (tipo == 0) {
-    aplicarLuz(valor);
-  } else if (tipo == 1) {
-    aplicarPuerta(valor);
+    if (tipo == 0) {
+      aplicarLuz(valor);
+    } else if (tipo == 1) {
+      aplicarPuerta(valor);
+    } else {
+      Serial.println("-> Tipo desconocido");
+      ackStatus = 1;
+    }
+    
+    lastProcessedMsgId = msgId;
   } else {
-    Serial.println("-> Tipo desconocido, ignorando");
+    Serial.println("-> Duplicado, solo ACK");
   }
   
-  Serial.println("=======================================\n");
-  
-  // IMPORTANTE: Volver a activar modo recepción
-  LoRa.receive();
-}
-
-void loop() {
-
+  // SIEMPRE enviar ACK (incluso para duplicados)
+  sendAck(sender, msgId, ackStatus);
 }

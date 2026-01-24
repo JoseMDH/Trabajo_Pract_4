@@ -235,7 +235,8 @@ void sendLoRaUpdates() {
   uint8_t newDistPayload = (lastDistanceState == 1) ? '1' : '0';
   
   // Solo enviar luz si cambió o es primera vez (lastSentValue == 0xFF)
-  if (newLightPayload != lightMsg.lastSentValue) {
+  // Y NO hay ya un mensaje pendiente
+  if (newLightPayload != lightMsg.lastSentValue && !lightMsg.pending) {
     lightMsg.payload = newLightPayload;
     lightMsg.pending = true;
     Serial.print("[LoRa] Cambio LUZ: ");
@@ -248,7 +249,8 @@ void sendLoRaUpdates() {
   }
 
   // Solo enviar distancia si cambió o es primera vez
-  if (newDistPayload != distanceMsg.lastSentValue) {
+  // Y NO hay ya un mensaje pendiente
+  if (newDistPayload != distanceMsg.lastSentValue && !distanceMsg.pending) {
     distanceMsg.payload = newDistPayload;
     distanceMsg.pending = true;
     Serial.print("[LoRa] Cambio DIST: ");

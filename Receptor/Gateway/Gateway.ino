@@ -2,19 +2,14 @@
  *  Gateway LoRa-Serial para Arduino MKR WAN 1310
  *  =============================================
  *  
+ *  VERSIÓN SIMPLIFICADA con ACK bloqueante (polling)
+ *  
  *  Este sketch convierte el Arduino en un gateway bidireccional:
  *  - Recibe mensajes LoRa y los envía por Serial a la Raspberry Pi
- *  - Recibe comandos por Serial y los transmite por LoRa
+ *  - Recibe comandos por Serial y los transmite por LoRa con ACK
  *  
  *  Protocolo Serial:
  *  STX(0x02) | tipo(1) | topic_len(1) | topic | payload_len(1) | payload | ETX(0x03)
- *  
- *  Tipos de mensaje:
- *  - 'R' (0x52): Mensaje recibido de LoRa (Arduino -> Raspberry)
- *  - 'T' (0x54): Mensaje a transmitir por LoRa (Raspberry -> Arduino)
- *  - 'A' (0x41): ACK
- *  - 'N' (0x4E): NACK
- *  - 'S' (0x53): Estado del sistema
  * ---------------------------------------------------------------------
  */
 
@@ -25,21 +20,16 @@
 // =====================
 // Configuración Serial
 // =====================
-// Usamos Serial1 para comunicación con Raspberry Pi (GPIO)
-// Serial1 en MKR WAN 1310: Pin 13 (RX), Pin 14 (TX)
-// Conectar: Arduino Pin 13 (RX) -> Raspberry GPIO14 (TX)
-//           Arduino Pin 14 (TX) -> Raspberry GPIO15 (RX)
-//           GND común
 #define SERIAL_PI Serial1
-#define SERIAL_DEBUG Serial  // USB para debug (opcional)
+#define SERIAL_DEBUG Serial
 
 // =====================
 // Configuración LoRa
 // =====================
-const uint8_t localAddress = 0x05;     // Dirección de este dispositivo (gateway)
-const uint8_t defaultDestination = 0x06; // Dirección de destino por defecto
+const uint8_t localAddress = 0x05;       // Gateway
+const uint8_t defaultDestination = 0x06; // Actuador
+const uint8_t ACK_MARKER = 0xAC;
 
-// Estructura para almacenar la configuración de la radio
 typedef struct {
   uint8_t bandwidth_index;
   uint8_t spreadingFactor;
@@ -58,15 +48,22 @@ LoRaConfig_t nodeConfig = {6, 10, 5, 2};  // BW=62.5kHz, SF=10, CR=4/5, TxPwr=2d
 #define STX 0x02
 #define ETX 0x03
 
-#define MSG_TYPE_LORA_RX  'R'  // Mensaje recibido de LoRa
-#define MSG_TYPE_LORA_TX  'T'  // Mensaje a transmitir por LoRa
-#define MSG_TYPE_ACK      'A'  // Acknowledgment
-#define MSG_TYPE_NACK     'N'  // Negative acknowledgment
-#define MSG_TYPE_STATUS   'S'  // Estado del sistema
+#define MSG_TYPE_LORA_RX  'R'
+#define MSG_TYPE_LORA_TX  'T'
+#define MSG_TYPE_ACK      'A'
+#define MSG_TYPE_NACK     'N'
+#define MSG_TYPE_STATUS   'S'
 
 #define MAX_TOPIC_LEN    64
 #define MAX_PAYLOAD_LEN  128
 #define SERIAL_BUFFER_SIZE 256
+
+// =====================
+// ACK Configuration - OPTIMIZADO
+// =====================
+const unsigned long ACK_TIMEOUT_MS = 2000;  // Timeout para esperar ACK (aumentado para SF10/BW62.5k)
+const uint8_t MAX_ACK_RETRIES = 3;          // Máximo reintentos
+const unsigned long TX_COOLDOWN_MS = 50;    // Cooldown entre TX
 
 // Buffer para recepción serial
 uint8_t serialBuffer[SERIAL_BUFFER_SIZE];
@@ -84,79 +81,12 @@ typedef struct {
 // =====================
 // Variables de estado
 // =====================
-volatile bool txDoneFlag = true;
-volatile bool transmitting = false;
 uint16_t msgCounter = 0;
-
-// Control de tiempo para evitar colisiones
 unsigned long lastTxTime = 0;
-const unsigned long TX_COOLDOWN_MS = 100;  // Mínimo entre transmisiones
-
-// =====================
-// Buffer para recepción LoRa (evitar I/O en ISR)
-// =====================
-typedef struct {
-  bool pending;              // Hay mensaje pendiente de procesar
-  char topic[MAX_TOPIC_LEN + 1];
-  uint8_t payload[MAX_PAYLOAD_LEN + 3];  // sender + rssi + snr + datos
-  uint8_t payloadLen;
-} LoRaRxMessage_t;
-
-volatile LoRaRxMessage_t loraRxMsg = {false, {0}, {0}, 0};
-
-// =====================
-// Cola de transmisión LoRa (para no bloquear)
-// =====================
-#define TX_QUEUE_SIZE 4
-
-typedef struct {
-  uint8_t destination;
-  uint8_t payload[MAX_PAYLOAD_LEN];
-  uint8_t payloadLen;
-  bool rawMode;  // true = solo payload, false = con topic
-  char topic[MAX_TOPIC_LEN + 1];
-  bool pending;
-} TxQueueItem_t;
-
-TxQueueItem_t txQueue[TX_QUEUE_SIZE];
-uint8_t txQueueHead = 0;
-uint8_t txQueueTail = 0;
-
-/**
- * Añade un mensaje a la cola de transmisión
- */
-bool enqueueTxMessage(uint8_t dest, const char* topic, const uint8_t* payload, uint8_t len, bool rawMode) {
-  uint8_t nextHead = (txQueueHead + 1) % TX_QUEUE_SIZE;
-  if (nextHead == txQueueTail) {
-    // Cola llena
-    return false;
-  }
-  
-  txQueue[txQueueHead].destination = dest;
-  txQueue[txQueueHead].payloadLen = len;
-  txQueue[txQueueHead].rawMode = rawMode;
-  memcpy(txQueue[txQueueHead].payload, payload, len);
-  if (topic) {
-    strncpy(txQueue[txQueueHead].topic, topic, MAX_TOPIC_LEN);
-  } else {
-    txQueue[txQueueHead].topic[0] = '\0';
-  }
-  txQueue[txQueueHead].pending = true;
-  txQueueHead = nextHead;
-  return true;
-}
-
-/**
- * Procesa la cola de transmisión (llamar desde loop)
- */
-void processTxQueue();
 
 // =====================
 // Mapeo de topics LoRa -> MQTT
 // =====================
-/**
- * Convierte topics internos a topics MQTT legibles
- */
 const char* mapTopic(const char* inTopic) {
   if (strcmp(inTopic, "sensor/0") == 0) return "sensores/puerta";
   if (strcmp(inTopic, "sensor/1") == 0) return "sensores/luz";
@@ -165,7 +95,6 @@ const char* mapTopic(const char* inTopic) {
   if (strcmp(inTopic, "sensor/4") == 0) return "sensores/movimiento";
   if (strcmp(inTopic, "actuator/0") == 0) return "actuadores/led";
   if (strcmp(inTopic, "actuator/1") == 0) return "actuadores/servo";
-  // Si no hay mapeo, devolver el original
   return inTopic;
 }
 
@@ -173,12 +102,8 @@ const char* mapTopic(const char* inTopic) {
 // Funciones de protocolo serial
 // =====================
 
-/**
- * Envía un mensaje por Serial1 en formato de trama (a la Raspberry Pi)
- */
 void sendSerialMessage(uint8_t msgType, const char* topic, const uint8_t* payload, uint8_t payloadLen) {
   uint8_t topicLen = strlen(topic);
-  
   SERIAL_PI.write(STX);
   SERIAL_PI.write(msgType);
   SERIAL_PI.write(topicLen);
@@ -189,90 +114,66 @@ void sendSerialMessage(uint8_t msgType, const char* topic, const uint8_t* payloa
   SERIAL_PI.flush();
 }
 
-/**
- * Envía un ACK por Serial
- */
 void sendAck() {
   uint8_t empty = 0;
   sendSerialMessage(MSG_TYPE_ACK, "", &empty, 0);
 }
 
-/**
- * Envía un NACK por Serial
- */
 void sendNack(const char* reason) {
   sendSerialMessage(MSG_TYPE_NACK, "", (const uint8_t*)reason, strlen(reason));
 }
 
-/**
- * Envía un mensaje de estado por Serial
- */
 void sendStatus(const char* status) {
   sendSerialMessage(MSG_TYPE_STATUS, "status", (const uint8_t*)status, strlen(status));
 }
 
-/**
- * Parsea un mensaje del buffer serial
- * Retorna true si se parseó correctamente un mensaje completo
- */
 bool parseSerialMessage(SerialMessage_t* msg) {
-  if (serialBufferIdx < 5) return false;  // Mínimo: STX + tipo + topicLen + payloadLen + ETX
+  if (serialBufferIdx < 5) return false;
   
-  // Buscar STX
   uint16_t startIdx = 0;
   while (startIdx < serialBufferIdx && serialBuffer[startIdx] != STX) {
     startIdx++;
   }
   
   if (startIdx > 0) {
-    // Descartar bytes antes de STX
     memmove(serialBuffer, serialBuffer + startIdx, serialBufferIdx - startIdx);
     serialBufferIdx -= startIdx;
   }
   
   if (serialBufferIdx < 5) return false;
   
-  // Verificar estructura
   msg->type = serialBuffer[1];
   msg->topicLen = serialBuffer[2];
   
   if (msg->topicLen > MAX_TOPIC_LEN) {
-    // Topic demasiado largo, descartar
     serialBufferIdx = 0;
     return false;
   }
   
-  uint16_t minLen = 4 + msg->topicLen + 1;  // STX + tipo + topicLen + topic + payloadLen + ETX
+  uint16_t minLen = 4 + msg->topicLen + 1;
   if (serialBufferIdx < minLen) return false;
   
   msg->payloadLen = serialBuffer[3 + msg->topicLen];
   
   if (msg->payloadLen > MAX_PAYLOAD_LEN) {
-    // Payload demasiado largo, descartar
     serialBufferIdx = 0;
     return false;
   }
   
-  uint16_t totalLen = 5 + msg->topicLen + msg->payloadLen;  // STX + tipo + topicLen + topic + payloadLen + payload + ETX
+  uint16_t totalLen = 5 + msg->topicLen + msg->payloadLen;
   
   if (serialBufferIdx < totalLen) return false;
   
-  // Verificar ETX
   if (serialBuffer[totalLen - 1] != ETX) {
-    // Mensaje corrupto, buscar siguiente STX
     memmove(serialBuffer, serialBuffer + 1, serialBufferIdx - 1);
     serialBufferIdx--;
     return false;
   }
   
-  // Copiar topic
   memcpy(msg->topic, serialBuffer + 3, msg->topicLen);
   msg->topic[msg->topicLen] = '\0';
-  
-  // Copiar payload
   memcpy(msg->payload, serialBuffer + 4 + msg->topicLen, msg->payloadLen);
   
-  // Eliminar mensaje del buffer
   memmove(serialBuffer, serialBuffer + totalLen, serialBufferIdx - totalLen);
   serialBufferIdx -= totalLen;
   
@@ -280,79 +181,104 @@ bool parseSerialMessage(SerialMessage_t* msg) {
 }
 
 // =====================
-// Funciones LoRa
+// Funciones LoRa SIMPLIFICADAS
 // =====================
 
 /**
- * Envía un mensaje por LoRa
- * El payload incluye: topic (null-terminated) + datos
+ * Envía mensaje LoRa en modo RAW y espera ACK (BLOQUEANTE con polling)
+ * Retorna: true si ACK recibido, false si timeout
  */
-void sendLoRaMessage(uint8_t destination, const char* topic, const uint8_t* payload, uint8_t payloadLen) {
-  while(!LoRa.beginPacket()) {
-    delay(10);
+bool sendLoRaWithAck(uint8_t destination, const uint8_t* payload, uint8_t payloadLen) {
+  uint16_t msgId = msgCounter++;
+  
+  for (uint8_t attempt = 0; attempt <= MAX_ACK_RETRIES; attempt++) {
+    if (attempt > 0) {
+      SERIAL_DEBUG.print("[RETRY] Intento ");
+      SERIAL_DEBUG.print(attempt);
+      SERIAL_DEBUG.print("/");
+      SERIAL_DEBUG.println(MAX_ACK_RETRIES);
+      delay(20);  // Pequeña pausa entre reintentos
+    }
+    
+    // Enviar paquete (bloqueante)
+    LoRa.beginPacket();
+    LoRa.write(destination);
+    LoRa.write(localAddress);
+    LoRa.write((uint8_t)(msgId >> 8));
+    LoRa.write((uint8_t)(msgId & 0xFF));
+    LoRa.write(payloadLen);
+    LoRa.write(payload, payloadLen);
+    LoRa.endPacket();  // BLOQUEANTE - espera a que termine
+    
+    SERIAL_DEBUG.print("[TX] msgId=");
+    SERIAL_DEBUG.print(msgId);
+    SERIAL_DEBUG.print(" -> 0x");
+    SERIAL_DEBUG.print(destination, HEX);
+    SERIAL_DEBUG.print(" len=");
+    SERIAL_DEBUG.println(payloadLen);
+    
+    // Entrar en modo recepción para ACK
+    LoRa.receive();
+    
+    // Esperar ACK con polling (BLOQUEANTE)
+    unsigned long startTime = millis();
+    while (millis() - startTime < ACK_TIMEOUT_MS) {
+      int packetSize = LoRa.parsePacket();
+      if (packetSize > 0) {
+        // Leer cabecera
+        uint8_t recipient = LoRa.read();
+        uint8_t sender = LoRa.read();
+        uint16_t rxMsgId = ((uint16_t)LoRa.read() << 8) | (uint16_t)LoRa.read();
+        uint8_t rxLen = LoRa.read();
+        
+        // Verificar si es para nosotros
+        if ((recipient & localAddress) != localAddress) {
+          // Descartar
+          while (LoRa.available()) LoRa.read();
+          continue;
+        }
+        
+        // Leer payload
+        uint8_t rxBuf[16];
+        uint8_t idx = 0;
+        while (LoRa.available() && idx < sizeof(rxBuf)) {
+          rxBuf[idx++] = LoRa.read();
+        }
+        
+        // Verificar si es ACK
+        if (rxLen >= 2 && rxBuf[0] == ACK_MARKER) {
+          SERIAL_DEBUG.print("[ACK] Recibido de 0x");
+          SERIAL_DEBUG.print(sender, HEX);
+          SERIAL_DEBUG.print(" rxMsgId=");
+          SERIAL_DEBUG.print(rxMsgId);
+          SERIAL_DEBUG.print(" esperado=");
+          SERIAL_DEBUG.println(msgId);
+          
+          if (sender == destination && rxMsgId == msgId) {
+            SERIAL_DEBUG.println("[ACK] OK!");
+            lastTxTime = millis();
+            return true;
+          }
+        }
+      }
+      delay(5);  // Pequeña pausa para no saturar CPU
+    }
+    
+    SERIAL_DEBUG.println("[TIMEOUT] ACK no recibido");
   }
   
-  // Cabecera del paquete LoRa
-  LoRa.write(destination);                // Destinatario
-  LoRa.write(localAddress);               // Remitente
-  LoRa.write((uint8_t)(msgCounter >> 8)); // ID mensaje (MSB)
-  LoRa.write((uint8_t)(msgCounter & 0xFF)); // ID mensaje (LSB)
-  
-  // Topic + payload
-  uint8_t topicLen = strlen(topic);
-  uint8_t totalLen = topicLen + 1 + payloadLen;  // topic + null + payload
-  
-  LoRa.write(totalLen);                   // Longitud total
-  LoRa.write((const uint8_t*)topic, topicLen);  // Topic
-  LoRa.write((uint8_t)'\0');              // Null terminator del topic
-  LoRa.write(payload, payloadLen);        // Payload
-  
-  LoRa.endPacket(true);  // No bloqueante
-  
-  msgCounter++;
+  SERIAL_DEBUG.println("[FAIL] Agotados reintentos");
+  lastTxTime = millis();
+  return false;
 }
 
 /**
- * Envía un mensaje por LoRa en modo RAW (solo payload, sin topic)
- * Usado para el actuador que espera: tipo(1) + valor(1)
+ * Verifica y procesa paquetes LoRa entrantes (modo polling)
+ * Retorna true si se procesó un mensaje (no ACK)
  */
-void sendLoRaMessageRaw(uint8_t destination, const uint8_t* payload, uint8_t payloadLen) {
-  while(!LoRa.beginPacket()) {
-    delay(10);
-  }
-  
-  // Cabecera del paquete LoRa (mismo formato que el actuador espera)
-  LoRa.write(destination);                // Destinatario
-  LoRa.write(localAddress);               // Remitente
-  LoRa.write((uint8_t)(msgCounter >> 8)); // ID mensaje (MSB)
-  LoRa.write((uint8_t)(msgCounter & 0xFF)); // ID mensaje (LSB)
-  LoRa.write(payloadLen);                 // Longitud del payload
-  LoRa.write(payload, payloadLen);        // Payload directo (tipo + valor)
-  
-  LoRa.endPacket(true);  // No bloqueante
-  
-  SERIAL_DEBUG.print("LoRa TX raw -> 0x");
-  SERIAL_DEBUG.print(destination, HEX);
-  SERIAL_DEBUG.print(" len=");
-  SERIAL_DEBUG.println(payloadLen);
-  
-  msgCounter++;
-}
-
-/**
- * Callback de recepción LoRa
- * NOTA: Este callback se ejecuta en contexto de interrupción.
- * NO hacer operaciones de I/O (Serial) aquí. Solo guardar datos en buffer.
- */
-void onLoRaReceive(int packetSize) {
-  if (transmitting && !txDoneFlag) txDoneFlag = true;
-  if (packetSize == 0) return;
-  
-  // Si hay un mensaje pendiente sin procesar, descartar el nuevo
-  if (loraRxMsg.pending) {
-    while (LoRa.available()) LoRa.read();
-    return;
-  }
+bool checkLoRaRx(char* topicOut, uint8_t* payloadOut, uint8_t* payloadLenOut) {
+  int packetSize = LoRa.parsePacket();
+  if (packetSize == 0) return false;
   
   // Leer cabecera
   uint8_t recipient = LoRa.read();
@@ -362,9 +288,8 @@ void onLoRaReceive(int packetSize) {
   
   // Verificar destinatario
   if ((recipient & localAddress) != localAddress) {
-    // Descartar bytes restantes
     while (LoRa.available()) LoRa.read();
-    return;
+    return false;
   }
   
   // Leer datos
@@ -374,114 +299,63 @@ void onLoRaReceive(int packetSize) {
     buffer[idx++] = LoRa.read();
   }
   
-  if (idx != incomingLen) {
-    // Error de longitud
-    return;
+  // Ignorar ACKs (se procesan en sendLoRaWithAck)
+  if (incomingLen >= 2 && buffer[0] == ACK_MARKER) {
+    return false;
   }
   
-  // Separar topic y payload
-  // Formato esperado: topicLen(1) + topic(topicLen) + payload
+  // Parsear topic y payload
+  // Formato: topicLen(1) + topic(topicLen) + payload
   uint8_t topicLen = buffer[0];
   
-  // Validar topicLen
   if (topicLen > MAX_TOPIC_LEN || topicLen >= idx) {
-    return;  // Topic inválido
+    return false;
   }
   
   // Copiar topic
-  for (uint8_t i = 0; i < topicLen; i++) {
-    ((char*)loraRxMsg.topic)[i] = buffer[1 + i];
-  }
-  ((char*)loraRxMsg.topic)[topicLen] = '\0';
+  memcpy(topicOut, buffer + 1, topicLen);
+  topicOut[topicLen] = '\0';
   
-  uint8_t payloadStart = 1 + topicLen;  // Después del topicLen + topic
-  uint8_t payloadLen = (payloadStart < idx) ? (idx - payloadStart) : 0;
+  // Copiar payload con metadatos
+  uint8_t payloadStart = 1 + topicLen;
+  uint8_t dataLen = (payloadStart < idx) ? (idx - payloadStart) : 0;
   
-  // Obtener RSSI y SNR
   int rssi = LoRa.packetRssi();
   float snr = LoRa.packetSnr();
   
-  // Construir payload: sender(1) + rssi(1) + snr(1) + payload
-  ((uint8_t*)loraRxMsg.payload)[0] = sender;
-  ((uint8_t*)loraRxMsg.payload)[1] = (uint8_t)(-rssi);  // Convertir a positivo
-  ((uint8_t*)loraRxMsg.payload)[2] = (uint8_t)(snr + 128);  // Offset para negativos
-  if (payloadLen > 0) {
-    memcpy((uint8_t*)loraRxMsg.payload + 3, buffer + payloadStart, payloadLen);
+  payloadOut[0] = sender;
+  payloadOut[1] = (uint8_t)(-rssi);
+  payloadOut[2] = (uint8_t)(snr + 128);
+  if (dataLen > 0) {
+    memcpy(payloadOut + 3, buffer + payloadStart, dataLen);
   }
-  loraRxMsg.payloadLen = payloadLen + 3;
+  *payloadLenOut = dataLen + 3;
   
-  // Marcar mensaje como pendiente (esto lo procesará el loop principal)
-  loraRxMsg.pending = true;
-}
-
-/**
- * Callback cuando termina la transmisión LoRa
- */
-void onTxDone() {
-  txDoneFlag = true;
-  lastTxTime = millis();
-}
-
-/**
- * Procesa la cola de transmisión (no bloqueante)
- */
-void processTxQueue() {
-  // Verificar si terminó la transmisión anterior
-  if (transmitting && txDoneFlag) {
-    transmitting = false;
-    LoRa.receive();  // Reactivar recepción
-  }
+  SERIAL_DEBUG.print("[RX] topic=");
+  SERIAL_DEBUG.print(topicOut);
+  SERIAL_DEBUG.print(" from=0x");
+  SERIAL_DEBUG.print(sender, HEX);
+  SERIAL_DEBUG.print(" len=");
+  SERIAL_DEBUG.println(*payloadLenOut);
   
-  // Si estamos transmitiendo, salir
-  if (transmitting) return;
-  
-  // Cooldown entre transmisiones para evitar saturar el canal
-  if (millis() - lastTxTime < TX_COOLDOWN_MS) return;
-  
-  // Verificar si hay mensajes en cola
-  if (txQueueTail == txQueueHead) return;  // Cola vacía
-  
-  TxQueueItem_t* item = &txQueue[txQueueTail];
-  if (!item->pending) {
-    txQueueTail = (txQueueTail + 1) % TX_QUEUE_SIZE;
-    return;
-  }
-  
-  // Transmitir
-  transmitting = true;
-  txDoneFlag = false;
-  
-  if (item->rawMode) {
-    sendLoRaMessageRaw(item->destination, item->payload, item->payloadLen);
-  } else {
-    sendLoRaMessage(item->destination, item->topic, item->payload, item->payloadLen);
-  }
-  
-  item->pending = false;
-  txQueueTail = (txQueueTail + 1) % TX_QUEUE_SIZE;
+  return true;
 }
 
 // =====================
 // Setup
 // =====================
 void setup() {
-  // Serial para debug por USB (opcional)
   SERIAL_DEBUG.begin(115200);
-  
-  // Serial1 para comunicación con Raspberry Pi (GPIO)
   SERIAL_PI.begin(115200);
   
-  // Esperar un poco para estabilizar
   delay(1000);
   
-  SERIAL_DEBUG.println("Gateway LoRa-Serial iniciando...");
+  SERIAL_DEBUG.println("Gateway LoRa-Serial (SIMPLIFICADO)");
   
-  // Inicializar PMIC
   if (!init_PMIC()) {
     SERIAL_DEBUG.println("PMIC init failed");
   }
   
-  // Inicializar LoRa
   if (!LoRa.begin(868E6)) {
     SERIAL_DEBUG.println("LoRa init failed!");
     sendStatus("LoRa init failed");
@@ -498,100 +372,74 @@ void setup() {
   LoRa.setSyncWord(0x12);
   LoRa.setPreambleLength(8);
   
-  // Configurar callbacks
-  LoRa.onReceive(onLoRaReceive);
-  LoRa.onTxDone(onTxDone);
-  
-  // Activar recepción
+  // NO usar callbacks - modo polling simplificado
   LoRa.receive();
   
-  SERIAL_DEBUG.println("Gateway listo!");
-  SERIAL_DEBUG.println("Serial1 -> Raspberry Pi GPIO");
-  SERIAL_DEBUG.println("Serial  -> USB Debug");
-  
-  // Enviar estado inicial a la Raspberry
+  SERIAL_DEBUG.println("Gateway listo (polling mode)!");
   sendStatus("Gateway ready");
 }
 
 // =====================
-// Loop principal
+// Loop principal SIMPLIFICADO
 // =====================
 void loop() {
-  // Procesar mensaje LoRa pendiente (recibido en ISR)
-  if (loraRxMsg.pending) {
-    // Copiar datos del buffer volatile a variables locales
-    char topic[MAX_TOPIC_LEN + 1];
-    uint8_t payload[MAX_PAYLOAD_LEN + 3];
-    uint8_t payloadLen;
-    
-    noInterrupts();  // Sección crítica
-    strcpy(topic, (const char*)loraRxMsg.topic);
-    memcpy(payload, (const uint8_t*)loraRxMsg.payload, loraRxMsg.payloadLen);
-    payloadLen = loraRxMsg.payloadLen;
-    loraRxMsg.pending = false;  // Marcar como procesado
-    interrupts();
-    
-    // Mapear topic a nombre legible
+  // 1. Procesar mensajes LoRa entrantes (polling)
+  char topic[MAX_TOPIC_LEN + 1];
+  uint8_t payload[MAX_PAYLOAD_LEN + 3];
+  uint8_t payloadLen;
+  
+  if (checkLoRaRx(topic, payload, &payloadLen)) {
     const char* mappedTopic = mapTopic(topic);
-    
-    // Ahora es seguro hacer I/O serial
     sendSerialMessage(MSG_TYPE_LORA_RX, mappedTopic, payload, payloadLen);
-    
-    SERIAL_DEBUG.print("LoRa RX: topic=");
-    SERIAL_DEBUG.print(topic);
-    SERIAL_DEBUG.print(" -> ");
-    SERIAL_DEBUG.print(mappedTopic);
-    SERIAL_DEBUG.print(" len=");
-    SERIAL_DEBUG.println(payloadLen);
   }
   
-  // Procesar datos del puerto serie (desde Raspberry Pi)
+  // 2. Procesar datos del puerto serie (desde Raspberry Pi)
   while (SERIAL_PI.available()) {
     if (serialBufferIdx < SERIAL_BUFFER_SIZE) {
       serialBuffer[serialBufferIdx++] = SERIAL_PI.read();
     } else {
-      // Buffer lleno, descartar byte más antiguo
       memmove(serialBuffer, serialBuffer + 1, SERIAL_BUFFER_SIZE - 1);
       serialBuffer[SERIAL_BUFFER_SIZE - 1] = SERIAL_PI.read();
     }
   }
   
-  // Intentar parsear mensaje serial
+  // 3. Intentar parsear mensaje serial y transmitir
   SerialMessage_t msg;
   if (parseSerialMessage(&msg)) {
     if (msg.type == MSG_TYPE_LORA_TX) {
       // Extraer destino del topic si tiene formato "@XX/..."
       uint8_t destination = defaultDestination;
-      char* topicToSend = msg.topic;
-      bool rawMode = false;
       
       if (msg.topicLen > 3 && msg.topic[0] == '@') {
         char hexAddr[3] = {msg.topic[1], msg.topic[2], '\0'};
         destination = (uint8_t)strtol(hexAddr, NULL, 16);
-        rawMode = true;  // Modo raw para actuador
-        
-        if (msg.topicLen > 4 && msg.topic[3] == '/') {
-          topicToSend = msg.topic + 4;
-        } else {
-          topicToSend = msg.topic + 3;
-        }
-        
-        SERIAL_DEBUG.print("Encolando TX -> 0x");
-        SERIAL_DEBUG.print(destination, HEX);
-        SERIAL_DEBUG.print(" raw=");
-        SERIAL_DEBUG.println(rawMode ? "SI" : "NO");
       }
       
-      // Encolar mensaje (no bloqueante)
-      if (enqueueTxMessage(destination, topicToSend, msg.payload, msg.payloadLen, rawMode)) {
-        sendAck();
-      } else {
-        sendNack("Queue full");
-        SERIAL_DEBUG.println("ERROR: Cola TX llena!");
+      SERIAL_DEBUG.print("[CMD] TX -> 0x");
+      SERIAL_DEBUG.print(destination, HEX);
+      SERIAL_DEBUG.print(" payload: ");
+      for (uint8_t i = 0; i < msg.payloadLen; i++) {
+        SERIAL_DEBUG.print(msg.payload[i], HEX);
+        SERIAL_DEBUG.print(" ");
       }
+      SERIAL_DEBUG.println();
+      
+      // Enviar por LoRa con ACK (BLOQUEANTE)
+      bool success = sendLoRaWithAck(destination, msg.payload, msg.payloadLen);
+      
+      if (success) {
+        sendAck();
+        SERIAL_DEBUG.println("[OK] Mensaje entregado");
+      } else {
+        sendNack("ACK timeout");
+        SERIAL_DEBUG.println("[FAIL] No se pudo entregar");
+      }
+      
+      // Volver a modo recepción
+      LoRa.receive();
     }
   }
   
-  // Procesar cola de transmisión (no bloqueante)
-  processTxQueue();
+  // Pequeña pausa para no saturar CPU
+  delay(1);
 }
