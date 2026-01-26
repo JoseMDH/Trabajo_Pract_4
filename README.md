@@ -1,7 +1,7 @@
 # Sistema de Domótica con LoRa y MQTT
 
 **Asignatura:** Internet de las cosas (GII-IC)  
-**Autores:** José Manuel Díaz Hernández, Nicolás Rey Alonso, Santiago, Alberto
+**Autores:** José Manuel Díaz Hernández, Nicolás Rey Alonso, Santiago Galindo Peralta, Alberto Martel Rodríguez 
 **Fecha:** Enero 2026
 
 ---
