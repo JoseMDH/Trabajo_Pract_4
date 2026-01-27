@@ -7,7 +7,7 @@ En esta sección se describen las principales decisiones de diseño tanto a nive
 A nivel lógico se ha optado por una arquitectura por capas:
 
 \begin{itemize}
-  \item \textbf{Capa de sensores}: formada por un esclavo (Arduino UNO) y un maestro (MKR WAN 1310). El esclavo encapsula el acceso hardware a los sensores (I\textsuperscript{2}C para SRF01/SRF02 y analógico para la LDR) detrás de un protocolo serie simple. El maestro actúa como único punto que interpreta las medidas, aplica umbrales y decide estados lógicos.
+  \item \textbf{Capa de sensores}: formada por un esclavo y un maestro (MKR WAN 1310). El esclavo encapsula el acceso hardware a los sensores (I\textsuperscript{2}C para SRF01/SRF02 y analógico para la LDR) detrás de un protocolo serie simple. El maestro actúa como único punto que interpreta las medidas, aplica umbrales y decide estados lógicos.
   \item \textbf{Capa de transporte LoRa}: el maestro y el gateway intercambian tramas LoRa con cabeceras explícitas (direcciones, identificador de mensaje, longitud), lo que permite dirigir mensajes a distintos nodos (gateway, actuador) y asociar ACKs a comandos concretos.
   \item \textbf{Capa de integración MQTT}: en la Raspberry Pi, un proceso puente traduce entre el protocolo serie del gateway y mensajes MQTT, mapeando topics internos (\texttt{sensor/0}, \texttt{sensor/1}) a topics lógicos (\texttt{sensores/puerta}, \texttt{sensores/luz}). Esta capa aplica además políticas de \emph{rate limiting} y eliminación de duplicados para no saturar LoRa.
   \item \textbf{Capa de presentación}: formada por el dashboard web y herramientas como \texttt{mosquitto\_sub}/\texttt{mosquitto\_pub}. Estas aplicaciones solo ven topics MQTT y no necesitan conocer detalles de LoRa ni del protocolo maestro--esclavo.
