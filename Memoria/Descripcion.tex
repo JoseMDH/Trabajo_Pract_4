@@ -4,6 +4,19 @@ En este trabajo se ha desarrollado un sistema de domótica distribuido orientado
 
 El público objetivo es principalmente docente: estudiantes de la asignatura de Internet de las Cosas que necesiten un ejemplo completo de arquitectura IoT (sensores, pasarela, protocolo de campo, broker MQTT y aplicaciones cliente). No obstante, la solución es extensible a escenarios reales de monitorización y control de acceso en pequeña escala.
 
+\section*{Contexto y Motivación}
+
+El Internet de las Cosas (IoT) ha revolucionado la forma en que interactuamos con nuestro entorno, permitiendo la automatización de tareas cotidianas y la monitorización remota de espacios. En el ámbito doméstico, los sistemas de domótica ofrecen beneficios tangibles:
+
+\begin{itemize}
+  \item \textbf{Eficiencia energética}: encender luces solo cuando es necesario reduce el consumo eléctrico.
+  \item \textbf{Comodidad}: puertas que se abren automáticamente al detectar presencia.
+  \item \textbf{Seguridad}: monitorización remota del estado del hogar.
+  \item \textbf{Accesibilidad}: control desde dispositivos móviles para personas con movilidad reducida.
+\end{itemize}
+
+La tecnología LoRa (Long Range) resulta especialmente adecuada para este tipo de aplicaciones por su largo alcance (hasta varios kilómetros en condiciones ideales), bajo consumo energético y capacidad de penetración en interiores. Combinada con MQTT, un protocolo de mensajería ligero diseñado para dispositivos con recursos limitados, permite construir sistemas escalables y flexibles.
+
 \section*{Objetivos}
 
 Los objetivos principales del proyecto son:
@@ -15,11 +28,43 @@ Los objetivos principales del proyecto son:
   \item Desarrollar una interfaz web sencilla que visualice en tiempo real el estado de luz y puerta, y que permita enviar comandos manuales reutilizando la infraestructura MQTT existente.
 \end{itemize}
 
+\section*{Funcionalidades del Sistema}
+
 Desde el punto de vista funcional, el sistema ofrece:
 
 \begin{itemize}
-  \item Encendido y apagado automático de la luz en función del nivel medido por la LDR (umbrales configurados en el maestro).
-  \item Apertura y cierre de una puerta simulada mediante un servo, a partir de la detección de presencia por dos sensores ultrasónicos.
-  \item Publicación de los estados lógicos (luz y puerta) en topics MQTT para monitorización y análisis.
-  \item Posibilidad de forzar manualmente los estados desde la red MQTT sin necesidad de acceder físicamente a los nodos LoRa.
+  \item \textbf{Control automático de iluminación}: encendido y apagado de la luz en función del nivel medido por la LDR. Cuando el sensor detecta oscuridad (valor inferior a 500), se enciende el LED; cuando hay luz suficiente, se apaga.
+  \item \textbf{Control automático de puerta}: apertura y cierre de una puerta simulada mediante un servomotor SG90. Los sensores ultrasónicos SRF01 y SRF02 detectan la presencia de objetos a menos de 100~cm, lo que activa la apertura.
+  \item \textbf{Publicación MQTT}: los estados lógicos (luz=0/1, puerta=0/1) se publican en topics MQTT para monitorización, registro histórico e integración con otras aplicaciones.
+  \item \textbf{Control manual}: posibilidad de forzar los estados desde cualquier cliente MQTT (dashboard web, mosquitto\_pub, Node-RED, Home Assistant) sin necesidad de acceder físicamente a los nodos.
+\end{itemize}
+
+\section*{Casos de Uso}
+
+A continuación se describen los principales casos de uso del sistema:
+
+\begin{table}[H]
+\centering
+\caption{Casos de uso del sistema de domótica.}
+\label{tab:casos-uso}
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Caso de Uso} & \textbf{Descripción} \\
+\midrule
+CU-01: Detectar oscuridad & El sensor LDR detecta un nivel de luz bajo y el sistema enciende automáticamente el LED. \\
+CU-02: Detectar presencia & El sensor ultrasónico detecta un objeto cercano y el sistema abre la puerta. \\
+CU-03: Monitorizar estado & El usuario accede al dashboard web y visualiza el estado actual de luz y puerta. \\
+CU-04: Forzar luz & El usuario pulsa un botón en el dashboard para encender o apagar la luz manualmente. \\
+CU-05: Forzar puerta & El usuario pulsa un botón en el dashboard para abrir o cerrar la puerta manualmente. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Alcance y Limitaciones}
+
+El sistema desarrollado tiene las siguientes características y limitaciones:
+
+\begin{itemize}
+  \item \textbf{Alcance}: sistema funcional con dos sensores (luz y distancia) y dos actuadores (LED y servo), comunicación LoRa bidireccional con ACK, integración MQTT completa y dashboard web en tiempo real.
+  \item \textbf{Limitaciones}: no implementa cifrado en LoRa, no tiene persistencia de datos históricos, y el dashboard no incluye autenticación de usuarios.
 \end{itemize}

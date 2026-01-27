@@ -1,0 +1,199 @@
+% Modelo de Datos - Sensores
+
+En este capítulo se describe el modelo de datos utilizado en el sistema, incluyendo la estructura de configuración de los sensores, los formatos de mensajes intercambiados y la codificación utilizada en cada capa.
+
+\section*{Notas Técnicas}
+
+\begin{itemize}
+  \item Por incompatibilidades de hardware, se usó \texttt{SoftwareSerial.h} para reemplazar \texttt{Serial1} en el Arduino UNO.
+  \item Todas las placas conectadas a la antena LoRa están conectadas a una batería para manejar la tensión y no quemar la placa.
+  \item Se heredó código de las prácticas 2 y 3 de la asignatura.
+\end{itemize}
+
+\section*{Sensores Utilizados}
+
+El sistema utiliza tres sensores físicos para la adquisición de datos del entorno:
+
+\begin{table}[H]
+\centering
+\caption{Sensores del sistema.}
+\label{tab:sensores}
+\begin{tabular}{llll}
+\toprule
+\textbf{Sensor} & \textbf{Tipo} & \textbf{Interfaz} & \textbf{Función} \\
+\midrule
+SRF01 & Ultrasónico & I\textsuperscript{2}C & Detección de distancia \\
+SRF02 & Ultrasónico & I\textsuperscript{2}C & Detección de distancia \\
+LDR & Fotorresistencia & Analógico (A1) & Nivel de luz ambiental \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Esclavo (\texttt{Esclavo.ino})}
+
+El esclavo se encarga de la gestión directa de sensores. Cada sensor dispone de una estructura de configuración propia que almacena su dirección, unidad de medida, retardo mínimo, modo de funcionamiento (periódico o puntual), periodo de muestreo y último valor leído.
+
+\begin{lstlisting}[language=C++, caption={Estructura de configuración de sensores.}]
+struct SensorConfig {
+  uint8_t address;      // Direccion I2C del sensor
+  uint8_t unit;         // Unidad de medida (cm, inch, us)
+  uint16_t delayMs;     // Retardo minimo entre lecturas
+  bool periodic;        // Modo periodico activo
+  uint16_t periodMs;    // Periodo de muestreo (ms)
+  unsigned long lastShot; // Timestamp ultima lectura
+  uint16_t lastMeasure; // Ultimo valor leido
+  bool active;          // Sensor detectado/activo
+  char name[8];         // Nombre del sensor
+};
+\end{lstlisting}
+
+Durante la fase de inicialización, el dispositivo detecta automáticamente la presencia de los sensores I\textsuperscript{2}C y habilita por defecto las mediciones periódicas (1~segundo) para aquellos sensores activos.
+
+\subsection*{Funciones de Lectura}
+
+Las lecturas de los sensores se realizan mediante las siguientes funciones:
+
+\begin{lstlisting}[language=C++, caption={Funciones de lectura de sensores.}]
+// Lectura de sensores ultrasonicos SRF02
+uint16_t readSRF02(uint8_t address, uint8_t unit) {
+  Wire.beginTransmission(address);
+  Wire.write(0x00);      // Registro de comando
+  Wire.write(unit);      // 0x51=cm, 0x50=inch, 0x52=us
+  Wire.endTransmission();
+  delay(70);             // Tiempo de medicion
+  Wire.requestFrom(address, 2);
+  uint16_t distance = (Wire.read() << 8) | Wire.read();
+  return distance;
+}
+
+// Lectura del fotorresistor
+uint16_t readLDR() {
+  return analogRead(A1);  // Valor 0-1023
+}
+\end{lstlisting}
+
+\subsection*{Protocolo de Respuesta}
+
+El esclavo envía las lecturas al maestro mediante un protocolo estructurado:
+
+\begin{lstlisting}[language=C++, caption={Envío de respuesta al maestro.}]
+void sendResponse(uint8_t code, uint8_t* data, uint8_t len) {
+  Serial1.write(RESP_START);   // Marcador inicio
+  Serial1.write(code);         // Codigo de respuesta
+  Serial1.write(len);          // Longitud de datos
+  if (len > 0 && data != nullptr) {
+    Serial1.write(data, len);
+  }
+  Serial1.write(RESP_END);     // Marcador fin
+}
+\end{lstlisting}
+
+\section*{Maestro (\texttt{Maestro.ino})}
+
+El maestro supervisa el sistema de sensores, interpreta las mediciones recibidas y las publica como pares etiqueta-valor a través de la red LoRa.
+
+\subsection*{Umbrales de Decisión}
+
+Las medidas crudas recibidas del esclavo son procesadas aplicando umbrales para convertirlas en estados binarios:
+
+\begin{lstlisting}[language=C++, caption={Umbrales de decisión.}]
+#define LIGHT_THRESHOLD   500   // luz < 500 -> oscuro (1)
+#define DISTANCE_THRESHOLD 100  // distancia < 100cm -> cerca (1)
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\caption{Interpretación de valores de sensores.}
+\label{tab:umbrales}
+\begin{tabular}{llll}
+\toprule
+\textbf{Sensor} & \textbf{Condición} & \textbf{Estado} & \textbf{Acción} \\
+\midrule
+LDR & valor < 500 & 1 (oscuro) & Encender LED \\
+LDR & valor $\geq$ 500 & 0 (iluminado) & Apagar LED \\
+SRF & distancia < 100~cm & 1 (cerca) & Abrir puerta \\
+SRF & distancia $\geq$ 100~cm & 0 (lejos) & Cerrar puerta \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Estructura de Mensajes}
+
+Para la comunicación LoRa, el maestro utiliza una estructura que mantiene el estado de cada sensor:
+
+\begin{lstlisting}[language=C++, caption={Estructura de mensaje de sensor.}]
+struct SensorMessage {
+  uint8_t payload;        // Valor a enviar (0 o 1)
+  bool pending;           // Hay mensaje pendiente
+  uint8_t lastSentValue;  // Ultimo valor enviado
+};
+
+// Mensajes pendientes para cada sensor
+SensorMessage sensorMessages[2];  // [0]=puerta, [1]=luz
+\end{lstlisting}
+
+\subsection*{Configuración LoRa}
+
+El maestro configura el módulo LoRa integrado en el MKR WAN 1310 con los siguientes parámetros:
+
+\begin{lstlisting}[language=C++, caption={Configuración LoRa del maestro.}]
+#define LORA_LOCAL_ADDRESS      0x04  // Direccion del maestro
+#define LORA_GATEWAY_ADDRESS    0x05  // Direccion del gateway
+#define LORA_FREQUENCY          868E6 // 868 MHz (Europa)
+#define LORA_BW                 62.5E3 // Ancho de banda
+#define LORA_SF                 10    // Spreading Factor
+#define LORA_CR                 5     // Coding Rate 4/5
+#define LORA_TP                 2     // Potencia TX (dBm)
+#define LORA_SYNC_WORD          0x12  // Palabra de sincronizacion
+#define LORA_PREAMBLE_LENGTH    8     // Longitud preambulo
+\end{lstlisting}
+
+\subsection*{Formato del Payload LoRa}
+
+El payload enviado por el maestro al gateway tiene el siguiente formato:
+
+\begin{table}[H]
+\centering
+\caption{Formato del payload de sensores.}
+\label{tab:payload-sensor}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{Campo} & \textbf{Tamaño} & \textbf{Descripción} \\
+\midrule
+TopicLen & 1 byte & Longitud del nombre del topic \\
+Topic & N bytes & Nombre del topic (ej: ``sensor/1'') \\
+Valor & 1 byte & Estado binario del sensor (0 o 1) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Política de Envío}
+
+El sistema de envío está diseñado para ser reactivo y eficiente:
+
+\begin{itemize}
+  \item Solo se envía un mensaje cuando hay un \textbf{cambio de estado} (de 0 a 1 o viceversa).
+  \item Se mantiene un \textbf{intervalo mínimo} de 500~ms entre envíos para no saturar el canal.
+  \item Los envíos se \textbf{alternan entre sensores} para distribuir la carga.
+\end{itemize}
+
+\begin{lstlisting}[language=C++, caption={Control de envío LoRa.}]
+const unsigned long LORA_SEND_INTERVAL = 500;  // 500ms minimo
+volatile bool sendDistanceNext = false;        // Alternar sensores
+\end{lstlisting}
+
+\section*{Resumen del Modelo de Datos}
+
+\begin{table}[H]
+\centering
+\caption{Resumen de topics y valores.}
+\label{tab:resumen-datos}
+\begin{tabular}{lllp{4cm}}
+\toprule
+\textbf{Topic Interno} & \textbf{Topic MQTT} & \textbf{Valores} & \textbf{Significado} \\
+\midrule
+sensor/0 & sensores/puerta & 0, 1 & 0=nadie, 1=presencia \\
+sensor/1 & sensores/luz & 0, 1 & 0=iluminado, 1=oscuro \\
+\bottomrule
+\end{tabular}
+\end{table}

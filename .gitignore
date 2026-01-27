@@ -1,1 +1,22 @@
 .venv/*
+./*.aux
+./*.lof
+./*.lot
+./Memoria/*.log
+
+# LaTeX
+**/*.aux
+**/*.log
+**/*.toc
+**/*.out
+**/*.bbl
+**/*.blg
+**/*.lof
+**/*.lot
+**/*.fls
+**/*.fdb_latexmk
+**/*.synctex.gz
+**/*.synctex
+**/*.nav
+**/*.snm
+**/*.vrb

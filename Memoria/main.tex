@@ -25,6 +25,8 @@
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.multipart}
 \lstset{
   basicstyle=\ttfamily\small,
   breaklines=true,
@@ -64,7 +66,7 @@
 \chapter{Introducción}
 \input{Introduccion}
 
-\chapter{Descripción de la aplicación incluyendo objetivos}\label{chap:descripcion}
+\chapter{Descripción de la aplicación y objetivos}\label{chap:descripcion}
 \input{Descripcion}
 
 \chapter{Diseño}\label{chap:diseno}
@@ -74,10 +76,10 @@
 \input{Arquitectura}
 
 \chapter{Modelo de Datos}\label{chap:modelodatos}
-\input{ModeloDatos}
+\input{Sensores}
 
 \chapter{Desarrollo}\label{chap:desarrollo}
-\input{Desarrollo}
+\input{Actuador}
 
 \chapter{Interfaces}\label{chap:interfaces}
 \input{Interfaces}

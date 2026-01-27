@@ -41,12 +41,93 @@ A nivel de diseño de interacción se ha priorizado:
   \item Registrar un histórico de eventos para ayudar en la depuración durante las pruebas.
 \end{itemize}
 
-% Si quieres, puedes sustituir la figura de ejemplo por una captura real del dashboard.
+
 \begin{figure}[H]
   \centering
-  \fbox{\rule{0pt}{120pt}\rule{180pt}{0pt}}
-  \caption{Borrador del dashboard web con estados de luz y puerta.}
-  \label{fig:mapa-navegacion}
+  \begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{./CapturasDashboard/1.png}
+    \caption{Dashboard — Escritorio (1)}
+    \label{fig:dash-escritorio-1}
+  \end{subfigure}%
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{./CapturasDashboard/2.png}
+    \caption{Dashboard — Escritorio (2)}
+    \label{fig:dash-escritorio-2}
+  \end{subfigure}
+  \vspace{4mm}
+  \begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=0.48\linewidth]{./CapturasDashboard/3.png}
+    \caption{Dashboard — Móvil (3)}
+    \label{fig:dash-movil-3}
+  \end{subfigure}%
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=0.48\linewidth]{./CapturasDashboard/4.png}
+    \caption{Dashboard — Móvil (4)}
+    \label{fig:dash-movil-4}
+  \end{subfigure}
+  \caption{Capturas del dashboard en escritorio (1–2) y móvil (3–4).}
+  \label{fig:capturas-dashboard}
 \end{figure}
 
 \subsection*{Diseño de la arquitectura del sistema}
+La arquitectura del sistema se basa en una comunicación jerárquica y modular entre los distintos componentes, cada uno con 
+responsabilidades claras:
+\begin{itemize}
+  \item \textbf{Esclavo de sensores}: encargado de la adquisición de datos desde los sensores físicos (LDR y SRF01/SRF02) y de 
+  enviarlos al maestro a través del canal serie.
+  \item \textbf{Maestro de sensores}: recibe los datos del esclavo, procesa las mediciones aplicando umbrales para determinar 
+  estados lógicos, y gestiona la comunicación inalámbrica mediante LoRa con el gateway.
+  \item \textbf{Gateway LoRa}: actúa como intermediario entre el maestro y la Raspberry Pi, recibiendo los mensajes LoRa y 
+  retransmitiéndolos a través del puerto serie y recibiendo los mensajes MQTT desde la raspberry y retransmitiéndolos por LoRa.
+  \item \textbf{Raspberry Pi}: ejecuta un proceso puente que traduce los mensajes del gateway a formato MQTT, aplicando 
+  políticas de filtrado y mapeo de topics. Además, aloja el broker MQTT y el dashboard web.
+  \item \textbf{Dashboard web}: proporciona una interfaz de usuario para visualizar el estado de los sensores y enviar comandos
+   manuales a través de MQTT.
+\end{itemize}
+\subsubsection*{Diagrama de arquitectura del sistema}
+\begin{figure}[H]
+  \centering
+  \shorthandoff{<>}% desactivar shorthands '<' y '>' de babel en español
+  \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+      box/.style={draw, rounded corners, minimum width=30mm, minimum height=10mm, align=center, fill=white, font=\scriptsize},
+      serial/.style={-{Stealth}, thick},
+      lora/.style={-{Stealth}, thick, dashed},
+      lbl/.style={font=\tiny, align=center}
+    ]
+
+    % Nodes
+    \node[box] (esclavo) {ESCLAVO\\(Arduino UNO)\\Luz/SRF};
+    \node[box,right=22mm of esclavo] (maestro) {MAESTRO\\(MKR WAN)\\LoRa TX};
+    \node[box,below=15mm of maestro] (gateway) {GATEWAY\\(MKR WAN)\\LoRa RX/TX};
+    \node[box,left=22mm of gateway] (raspi) {RASPBERRY PI\\MQTT Broker};
+    \node[box,right=22mm of gateway] (actuador) {ACTUADOR\\(Arduino UNO)\\LED/Servo};
+    \node[box,below=15mm of raspi] (apps) {APLICACIONES\\Dashboard};
+
+    % Connections (solid = serial, dashed = LoRa)
+    \draw[serial] (esclavo) -- node[midway,above,lbl]{Serial} (maestro);
+    \draw[lora] (maestro.south) .. controls +(-2mm,-8mm) and +(0,8mm) .. node[midway,right=1mm,lbl]{LoRa} (gateway.north);
+    \draw[<->, thick] (gateway.west) -- node[midway,above,lbl]{Serial (GPIO UART)} (raspi.east);
+    \draw[lora] (gateway.east) -- node[midway,above,lbl]{LoRa} (actuador.west);
+    \draw[serial] (raspi) -- node[midway,left,lbl]{MQTT} (apps);
+
+    % Legend
+    \begin{scope}[shift={(0,-45mm)}]
+      \node[anchor=north west, font=\small] at (-50mm,0) {\textbf{Leyenda:}};
+      \draw[serial] (-25mm,-4mm) -- ++(10mm,0) node[right=2mm, font=\tiny] {Serial};
+      \draw[lora] (5mm,-4mm) -- ++(10mm,0) node[right=2mm, font=\tiny] {LoRa (dashed)};
+    \end{scope}
+
+    \end{tikzpicture}%
+  }%
+  \shorthandon{<>}% reactivar shorthands
+  \caption{Diagrama de arquitectura del sistema. Líneas continuas: comunicación serial/MQTT. Líneas discontinuas: LoRa inalámbrico.}
+  \label{fig:diagrama-arquitectura}
+\end{figure}
+

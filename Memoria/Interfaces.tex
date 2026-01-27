@@ -1,0 +1,246 @@
+% Interfaces - Broker, Dashboard y Gateway
+
+En este capítulo se describen las interfaces de software del sistema: el gateway LoRa, el puente MQTT-LoRa y el dashboard web de monitorización.
+
+\section*{Gateway LoRa (MKR WAN 1310)}
+
+El gateway actúa como intermediario bidireccional entre la red LoRa y la Raspberry Pi. Su función principal es traducir entre el protocolo binario de LoRa y el protocolo serial estructurado que entiende el puente MQTT.
+
+\subsection*{Funcionalidades principales}
+
+\begin{itemize}
+  \item \textbf{Recepción LoRa}: escucha continuamente mensajes de los nodos sensores y los reenvía por serial.
+  \item \textbf{Transmisión LoRa}: recibe comandos por serial y los transmite a los actuadores.
+  \item \textbf{Gestión de ACK}: espera confirmación del actuador y reintenta si es necesario.
+  \item \textbf{Mapeo de topics}: traduce los topics internos (\texttt{sensor/0}) a topics MQTT (\texttt{sensores/puerta}).
+\end{itemize}
+
+\subsection*{Protocolo serial}
+
+El gateway implementa un protocolo binario delimitado:
+
+\begin{lstlisting}[language=C++, caption={Constantes del protocolo serial.}]
+#define STX 0x02  // Start of Text
+#define ETX 0x03  // End of Text
+
+#define MSG_TYPE_LORA_RX  'R'  // Mensaje recibido de LoRa
+#define MSG_TYPE_LORA_TX  'T'  // Mensaje a transmitir
+#define MSG_TYPE_ACK      'A'  // Acknowledgment
+#define MSG_TYPE_NACK     'N'  // Negative acknowledgment
+#define MSG_TYPE_STATUS   'S'  // Estado del sistema
+\end{lstlisting}
+
+\subsection*{Sistema de reintentos}
+
+Para garantizar la entrega fiable de comandos, el gateway implementa un sistema de reintentos con timeout:
+
+\begin{lstlisting}[language=C++, caption={Configuración de reintentos.}]
+const unsigned long ACK_TIMEOUT_MS = 2000;  // 2 segundos
+const uint8_t MAX_ACK_RETRIES = 3;          // 3 intentos
+const unsigned long TX_COOLDOWN_MS = 50;    // Cooldown entre TX
+\end{lstlisting}
+
+\section*{Puente MQTT-LoRa (Raspberry Pi)}
+
+El script \texttt{mqtt\_lora\_bridge.py} ejecutándose en la Raspberry Pi conecta el mundo LoRa con el ecosistema MQTT.
+
+\subsection*{Arquitectura del puente}
+
+El puente utiliza dos hilos principales:
+
+\begin{itemize}
+  \item \textbf{Hilo serial}: lee continuamente del puerto GPIO UART y parsea las tramas del gateway.
+  \item \textbf{Hilo MQTT}: gestiona la conexión al broker y procesa los mensajes suscritos.
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption={Configuración del puente.}]
+SERIAL_PORT = "/dev/serial0"  # GPIO UART
+SERIAL_BAUD = 115200
+
+MQTT_BROKER = "localhost"
+MQTT_PORT = 1883
+
+# Topics de suscripcion para reenviar por LoRa
+TOPICS_TO_LORA = [
+    "lora/tx",
+    "actuador/comando",
+    "sensores/luz",
+    "sensores/puerta"
+]
+\end{lstlisting}
+
+\subsection*{Control de rate limiting}
+
+Para evitar saturar el canal LoRa, el puente implementa políticas de limitación:
+
+\begin{lstlisting}[language=Python, caption={Políticas de rate limiting.}]
+MIN_TX_INTERVAL = 0.15   # Minimo 150ms entre envios
+DUPLICATE_WINDOW = 2.0   # Ignorar duplicados en 2 segundos
+\end{lstlisting}
+
+\subsection*{Clases principales}
+
+\begin{itemize}
+  \item \texttt{SerialProtocol}: gestiona la comunicación serial con el gateway, incluyendo conexión, desconexión y parseo de tramas.
+  \item \texttt{LoRaMessage}: estructura de datos para mensajes LoRa con campos para emisor, RSSI, SNR, topic y payload.
+  \item \texttt{MQTTLoRaBridge}: clase principal que coordina serial y MQTT, implementa el mapeo de topics y las políticas de QoS.
+\end{itemize}
+
+\section*{Dashboard Web}
+
+El dashboard proporciona una interfaz visual para monitorizar el estado de los sensores y enviar comandos manuales.
+
+\subsection*{Tecnologías utilizadas}
+
+\begin{itemize}
+  \item \textbf{Flask}: framework web ligero para Python.
+  \item \textbf{Flask-SocketIO}: extensión para comunicación en tiempo real mediante WebSockets.
+  \item \textbf{Paho MQTT}: cliente MQTT para Python.
+  \item \textbf{HTML/CSS/JavaScript}: interfaz de usuario responsive.
+\end{itemize}
+
+\subsection*{Arquitectura del dashboard}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    box/.style={draw, rounded corners, minimum width=30mm, minimum height=10mm, align=center, fill=white},
+    arrow/.style={-{Stealth}, thick},
+    darrow/.style={{Stealth}-{Stealth}, thick}
+  ]
+    \node[box, fill=blue!10] (browser) {Navegador Web};
+    \node[box, fill=green!10, below=15mm of browser] (flask) {Flask + SocketIO};
+    \node[box, fill=orange!10, below=15mm of flask] (mqtt) {Broker MQTT};
+    
+    \draw[darrow] (browser) -- node[right, font=\footnotesize]{WebSocket} (flask);
+    \draw[darrow] (flask) -- node[right, font=\footnotesize]{MQTT} (mqtt);
+  \end{tikzpicture}
+  \caption{Arquitectura del dashboard web.}
+  \label{fig:arquitectura-dashboard}
+\end{figure}
+
+\subsection*{Funcionalidades}
+
+El dashboard ofrece las siguientes características:
+
+\begin{itemize}
+  \item \textbf{Visualización en tiempo real}: muestra el estado actual de luz y puerta con emojis e indicadores de color.
+  \item \textbf{Control manual}: botones para forzar estados 0 o 1 en cada sensor/actuador.
+  \item \textbf{Indicadores de conexión}: muestra el estado de la conexión WebSocket y MQTT.
+  \item \textbf{Log de eventos}: registro histórico de mensajes recibidos y enviados.
+\end{itemize}
+
+\subsection*{Interfaz de usuario}
+
+La interfaz está diseñada para ser intuitiva y accesible desde cualquier dispositivo:
+
+\begin{itemize}
+  \item Diseño responsive con CSS Grid.
+  \item Tema oscuro con gradientes para reducir fatiga visual.
+  \item Tarjetas con bordes redondeados y efecto glassmorphism.
+  \item Emojis grandes (100px) para identificación rápida del estado.
+  \item Transiciones suaves para cambios de estado.
+\end{itemize}
+
+\begin{lstlisting}[caption={Estructura de una tarjeta de sensor.}]
+<div class="card">
+  <div class="emoji" id="emoji-luz">💡</div>
+  <div class="titulo-sensor">Sensor de Luz</div>
+  <div class="estado" id="estado-luz">Desconocido</div>
+  <div class="botones">
+    <button onclick="publicarLuz(0)">Iluminado (0)</button>
+    <button onclick="publicarLuz(1)">Oscuro (1)</button>
+  </div>
+</div>
+\end{lstlisting}
+
+\subsection*{Comunicación en tiempo real}
+
+La actualización del dashboard se realiza mediante WebSockets con SocketIO:
+
+\begin{lstlisting}[language=C, caption={Manejo de eventos SocketIO en el cliente.}]
+socket.on('update_luz', function(data) {
+  const valor = data.valor;
+  document.getElementById('emoji-luz').textContent = 
+    valor === 1 ? '🌙' : '☀️';
+  document.getElementById('estado-luz').textContent = 
+    valor === 1 ? 'Oscuro' : 'Iluminado';
+});
+
+socket.on('update_puerta', function(data) {
+  const valor = data.valor;
+  document.getElementById('emoji-puerta').textContent = 
+    valor === 1 ? '🚪' : '🔒';
+  document.getElementById('estado-puerta').textContent = 
+    valor === 1 ? 'Abierta/Gente' : 'Cerrada/Nadie';
+});
+\end{lstlisting}
+
+\subsection*{Eventos del servidor}
+
+El servidor Flask gestiona los siguientes eventos:
+
+\begin{table}[H]
+\centering
+\caption{Eventos SocketIO del dashboard.}
+\label{tab:eventos-socketio}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{Evento} & \textbf{Dirección} & \textbf{Descripción} \\
+\midrule
+\texttt{connect} & Cliente $\rightarrow$ Servidor & Cliente web conectado \\
+\texttt{estado\_inicial} & Servidor $\rightarrow$ Cliente & Envía estado actual \\
+\texttt{update\_luz} & Servidor $\rightarrow$ Cliente & Actualiza estado de luz \\
+\texttt{update\_puerta} & Servidor $\rightarrow$ Cliente & Actualiza estado de puerta \\
+\texttt{publicar\_luz} & Cliente $\rightarrow$ Servidor & Envía comando de luz \\
+\texttt{publicar\_puerta} & Cliente $\rightarrow$ Servidor & Envía comando de puerta \\
+\texttt{mqtt\_status} & Servidor $\rightarrow$ Cliente & Estado conexión MQTT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Instalación y Ejecución}
+
+\subsection*{Requisitos}
+
+Los requisitos de software para ejecutar el sistema completo son:
+
+\begin{lstlisting}[caption={Contenido de requirements.txt}]
+paho-mqtt>=1.6.0
+pyserial>=3.5
+flask>=2.0.0
+flask-socketio>=5.0.0
+\end{lstlisting}
+
+\subsection*{Configuración de la Raspberry Pi}
+
+\begin{enumerate}
+  \item Deshabilitar la consola serial en \texttt{raspi-config} y habilitar el puerto ``serial0`` para uso general.
+  \item Instalar el broker Mosquitto y Python 3:
+  \begin{lstlisting}[language=bash]
+sudo apt install mosquitto mosquitto-clients python3-pip
+  \end{lstlisting}
+  \item Habilitar Mosquitto para que arranque al inicio:
+  \begin{lstlisting}[language=bash]
+sudo systemctl enable mosquitto
+  \end{lstlisting}
+  \item Instalar dependencias Python:
+  \begin{lstlisting}[language=bash]
+pip3 install -r requirements.txt
+  \end{lstlisting}
+  \item Ejecutar el puente y el dashboard:
+  \begin{lstlisting}[language=bash]
+python3 mqtt_lora_bridge.py &
+python3 web_dashboard.py
+  \end{lstlisting}
+\end{enumerate}
+
+\subsection*{Acceso al dashboard}
+
+El dashboard es accesible desde cualquier dispositivo en la misma red local mediante:
+
+\begin{center}
+\texttt{http://<IP\_RASPBERRY>:5000}
+\end{center}
+
+La aplicación está configurada con \texttt{cors\_allowed\_origins="*"} para permitir conexiones desde cualquier origen durante el desarrollo.

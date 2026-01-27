@@ -1,0 +1,162 @@
+% Desarrollo - Actuador
+
+En este capítulo se describe el desarrollo del nodo actuador, encargado de ejecutar las acciones físicas en respuesta a los estados detectados por los sensores. El actuador recibe comandos a través de LoRa desde el gateway y controla dos elementos: un LED para la iluminación y un servomotor para la apertura y cierre de una puerta.
+
+\section*{Hardware del Actuador}
+
+El nodo actuador está compuesto por los siguientes elementos:
+
+\begin{itemize}
+  \item \textbf{Arduino UNO}: microcontrolador principal que ejecuta la lógica de control.
+  \item \textbf{Módulo LoRa SX1276}: receptor de comunicaciones inalámbricas a 868~MHz.
+  \item \textbf{LED}: indicador luminoso conectado al pin 6, representa la iluminación del entorno.
+  \item \textbf{Servo SG90}: servomotor conectado al pin 7, simula el mecanismo de apertura de una puerta.
+\end{itemize}
+
+Las conexiones del módulo LoRa al Arduino UNO siguen el estándar SPI:
+
+\begin{table}[H]
+\centering
+\caption{Conexiones del módulo LoRa SX1276 al Arduino UNO.}
+\label{tab:conexiones-lora-actuador}
+\begin{tabular}{ll}
+\toprule
+\textbf{Pin LoRa} & \textbf{Pin Arduino} \\
+\midrule
+NSS  & Pin 10 \\
+MOSI & Pin 11 \\
+MISO & Pin 12 \\
+SCK  & Pin 13 \\
+RST  & Pin 9 \\
+DIO0 & Pin 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Configuración LoRa}
+
+El actuador debe utilizar exactamente la misma configuración LoRa que el resto de nodos del sistema para garantizar la interoperabilidad:
+
+\begin{lstlisting}[language=C++, caption={Configuración LoRa del actuador.}]
+LoRaConfig_t nodeConfig = {6, 10, 5, 2};
+// BW = 62.5 kHz (indice 6)
+// SF = 10 (Spreading Factor)
+// CR = 4/5 (Coding Rate)
+// TxPwr = 2 dBm
+\end{lstlisting}
+
+La dirección LoRa asignada al actuador es \texttt{0x06}, mientras que solo acepta mensajes provenientes del gateway (\texttt{0x05}). Esto proporciona una capa básica de seguridad al filtrar emisores no autorizados.
+
+\section*{Protocolo de Comandos}
+
+Los comandos recibidos por el actuador siguen un formato binario compacto de dos bytes:
+
+\begin{table}[H]
+\centering
+\caption{Formato del payload de comandos para el actuador.}
+\label{tab:formato-comando-actuador}
+\begin{tabular}{lll}
+\toprule
+\textbf{Byte} & \textbf{Campo} & \textbf{Descripción} \\
+\midrule
+0 & Tipo & 0 = Luz, 1 = Puerta \\
+1 & Valor & Estado a aplicar \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Para el control de luz:
+\begin{itemize}
+  \item Valor 0: Apagar LED.
+  \item Valor 1: Encender LED.
+\end{itemize}
+
+Para el control de puerta:
+\begin{itemize}
+  \item Valor 0: Cerrar puerta (servo a 10°).
+  \item Valor 1, 2 o 3: Abrir puerta (servo a 160°).
+\end{itemize}
+
+\section*{Sistema de ACK}
+
+El actuador implementa un sistema de confirmación (ACK) para garantizar la entrega fiable de comandos. Cada vez que recibe un paquete válido, responde inmediatamente con un ACK que incluye:
+
+\begin{itemize}
+  \item Dirección de destino (el gateway).
+  \item Dirección de origen (el actuador).
+  \item Identificador de mensaje (el mismo que el comando recibido).
+  \item Marcador de ACK (\texttt{0xAC}).
+  \item Estado (0 = éxito, 1 = error).
+\end{itemize}
+
+\begin{lstlisting}[language=C++, caption={Función de envío de ACK.}]
+void sendAck(uint8_t dest, uint16_t msgId, uint8_t status) {
+  LoRa.beginPacket();
+  LoRa.write(dest);
+  LoRa.write(localAddress);
+  LoRa.write((uint8_t)(msgId >> 8));
+  LoRa.write((uint8_t)(msgId & 0xFF));
+  LoRa.write((uint8_t)2);
+  LoRa.write(ACK_MARKER);
+  LoRa.write(status);
+  LoRa.endPacket();
+}
+\end{lstlisting}
+
+\section*{Control de Duplicados}
+
+Para evitar que un mismo comando se ejecute múltiples veces (por ejemplo, debido a retransmisiones del gateway), el actuador mantiene el identificador del último mensaje procesado. Si recibe un paquete con el mismo \texttt{msgId}, responde con ACK pero no vuelve a ejecutar la acción:
+
+\begin{lstlisting}[language=C++, caption={Detección de mensajes duplicados.}]
+uint16_t lastProcessedMsgId = 0xFFFF;
+
+// En el bucle de recepcion:
+bool isDuplicate = (msgId == lastProcessedMsgId);
+if (!isDuplicate) {
+  // Procesar comando
+  lastProcessedMsgId = msgId;
+}
+// SIEMPRE enviar ACK
+sendAck(sender, msgId, ackStatus);
+\end{lstlisting}
+
+\section*{Funciones de Control}
+
+Las funciones que aplican los estados físicos son directas y robustas:
+
+\begin{lstlisting}[language=C++, caption={Control del LED y servo.}]
+void aplicarLuz(uint8_t v) {
+  if (v == 1) {
+    digitalWrite(pinLed, HIGH);
+  } else if (v == 0) {
+    digitalWrite(pinLed, LOW);
+  }
+}
+
+void aplicarPuerta(uint8_t v) {
+  if (v == 0) {
+    posicion = 10;
+    miServo.write(posicion);
+  } else if (v == 1 || v == 2 || v == 3) {
+    posicion = 160;
+    miServo.write(posicion);
+  }
+}
+\end{lstlisting}
+
+\section*{Flujo de Operación}
+
+El actuador opera en modo \emph{polling}, verificando continuamente si hay paquetes LoRa disponibles:
+
+\begin{enumerate}
+  \item Inicialización del hardware (servo, LED, LoRa).
+  \item Bucle principal: verificar si hay paquete LoRa disponible.
+  \item Si hay paquete: leer cabecera y verificar destinatario.
+  \item Verificar que el emisor sea el gateway autorizado.
+  \item Extraer tipo y valor del payload.
+  \item Si no es duplicado: ejecutar acción correspondiente.
+  \item Enviar ACK al gateway.
+  \item Volver al paso 2.
+\end{enumerate}
+
+Este diseño garantiza que el actuador responda rápidamente a los comandos mientras mantiene un consumo de recursos bajo, adecuado para un microcontrolador con recursos limitados como el Arduino UNO.

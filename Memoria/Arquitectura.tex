@@ -1,0 +1,227 @@
+% Arquitectura
+
+En este capítulo se describe la arquitectura global del sistema, los flujos de comunicación entre los distintos nodos y los protocolos utilizados en cada capa.
+
+\section*{Visión General}
+
+El sistema sigue una arquitectura distribuida de tipo \emph{sensor-gateway-actuador} con integración en la nube a través de MQTT. Los componentes principales son:
+
+\begin{enumerate}
+  \item \textbf{Nodo de sensores}: compuesto por un esclavo (Arduino UNO) y un maestro (MKR WAN 1310).
+  \item \textbf{Gateway LoRa}: MKR WAN 1310 conectado a la Raspberry Pi.
+  \item \textbf{Raspberry Pi}: ejecuta el broker MQTT y el puente serie-MQTT.
+  \item \textbf{Nodo actuador}: Arduino UNO con módulo LoRa externo.
+  \item \textbf{Aplicaciones cliente}: dashboard web, Node-RED, Home Assistant.
+\end{enumerate}
+
+\section*{Diagrama de Flujo de Datos}
+
+El flujo de datos desde los sensores hasta las aplicaciones cliente sigue el siguiente recorrido:
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    node distance=12mm,
+    box/.style={draw, rounded corners, minimum width=28mm, minimum height=10mm, align=center, fill=blue!10},
+    data/.style={draw, rounded corners, minimum width=24mm, minimum height=8mm, align=center, fill=green!10},
+    arrow/.style={-{Stealth}, thick}
+  ]
+    % Nodos
+    \node[box] (sensor) {Sensores\\(LDR, SRF)};
+    \node[box, right=of sensor] (esclavo) {Esclavo};
+    \node[box, right=of esclavo] (maestro) {Maestro};
+    \node[box, right=of maestro] (gateway) {Gateway};
+    \node[box, right=of gateway] (raspi) {Raspberry Pi};
+    
+    % Flechas
+    \draw[arrow] (sensor) -- node[above, font=\scriptsize]{Analógico/I2C} (esclavo);
+    \draw[arrow] (esclavo) -- node[above, font=\scriptsize]{Serial} (maestro);
+    \draw[arrow, dashed] (maestro) -- node[above, font=\scriptsize]{LoRa} (gateway);
+    \draw[arrow] (gateway) -- node[above, font=\scriptsize]{Serial} (raspi);
+  \end{tikzpicture}
+  \caption{Flujo de datos desde sensores hasta la Raspberry Pi.}
+  \label{fig:flujo-sensores}
+\end{figure}
+
+\section*{Protocolo Maestro-Esclavo (Serial)}
+
+La comunicación entre el esclavo y el maestro utiliza un protocolo serie sencillo basado en tramas estructuradas. El esclavo envía periódicamente las lecturas de los sensores al maestro.
+
+\begin{table}[H]
+\centering
+\caption{Estructura de respuesta del esclavo al maestro.}
+\label{tab:protocolo-esclavo}
+\begin{tabular}{lll}
+\toprule
+\textbf{Campo} & \textbf{Tamaño} & \textbf{Descripción} \\
+\midrule
+Código respuesta & 1 byte & Tipo de dato (distancia, luz, error) \\
+ID Sensor & 1 byte & Identificador del sensor \\
+Dato (MSB) & 1 byte & Byte alto de la medida \\
+Dato (LSB) & 1 byte & Byte bajo de la medida \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Protocolo LoRa}
+
+Las comunicaciones LoRa entre el maestro, el gateway y el actuador utilizan un formato de paquete común con cabecera explícita:
+
+\begin{table}[H]
+\centering
+\caption{Formato de paquete LoRa.}
+\label{tab:formato-lora}
+\begin{tabular}{llp{6cm}}
+\toprule
+\textbf{Campo} & \textbf{Tamaño} & \textbf{Descripción} \\
+\midrule
+Destino & 1 byte & Dirección del nodo destino \\
+Origen & 1 byte & Dirección del nodo emisor \\
+Msg ID (MSB) & 1 byte & Identificador de mensaje (byte alto) \\
+Msg ID (LSB) & 1 byte & Identificador de mensaje (byte bajo) \\
+Longitud & 1 byte & Tamaño del payload en bytes \\
+Payload & N bytes & Datos del mensaje \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Las direcciones asignadas a cada nodo son:
+
+\begin{table}[H]
+\centering
+\caption{Direcciones LoRa de los nodos del sistema.}
+\label{tab:direcciones-lora}
+\begin{tabular}{ll}
+\toprule
+\textbf{Nodo} & \textbf{Dirección} \\
+\midrule
+Maestro (sensores) & \texttt{0x04} \\
+Gateway & \texttt{0x05} \\
+Actuador & \texttt{0x06} \\
+Broadcast & \texttt{0xFF} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Protocolo Serial Gateway-Raspberry}
+
+El gateway y la Raspberry Pi se comunican mediante un protocolo binario delimitado por caracteres STX/ETX:
+
+\begin{table}[H]
+\centering
+\caption{Formato de trama serial entre Gateway y Raspberry Pi.}
+\label{tab:protocolo-serial-gateway}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{Campo} & \textbf{Valor/Tamaño} & \textbf{Descripción} \\
+\midrule
+STX & \texttt{0x02} & Inicio de trama \\
+Tipo & 1 byte & R=RX, T=TX, A=ACK, N=NACK, S=Status \\
+Topic Len & 1 byte & Longitud del topic \\
+Topic & N bytes & Nombre del topic \\
+Payload Len & 1 byte & Longitud del payload \\
+Payload & N bytes & Datos \\
+ETX & \texttt{0x03} & Fin de trama \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Integración MQTT}
+
+El broker MQTT (Mosquitto) en la Raspberry Pi expone los siguientes topics:
+
+\begin{table}[H]
+\centering
+\caption{Topics MQTT del sistema.}
+\label{tab:topics-mqtt}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{Topic} & \textbf{Dirección} & \textbf{Descripción} \\
+\midrule
+\texttt{sensores/luz} & Publicación & Estado del sensor de luz (0/1) \\
+\texttt{sensores/puerta} & Publicación & Estado del sensor de proximidad (0/1) \\
+\texttt{lora/rx} & Publicación & Mensajes LoRa en bruto (JSON) \\
+\texttt{lora/tx} & Suscripción & Enviar mensaje LoRa genérico \\
+\texttt{actuador/comando} & Suscripción & Comandos para el actuador \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+El puente MQTT-LoRa (\texttt{mqtt\_lora\_bridge.py}) realiza el mapeo entre los topics internos de LoRa y los topics MQTT legibles:
+
+\begin{itemize}
+  \item \texttt{sensor/0} $\rightarrow$ \texttt{sensores/puerta}
+  \item \texttt{sensor/1} $\rightarrow$ \texttt{sensores/luz}
+\end{itemize}
+
+\section*{Flujo de Control (Actuador)}
+
+Cuando una aplicación cliente desea controlar el actuador, el flujo es el siguiente:
+
+\begin{enumerate}
+  \item La aplicación publica en \texttt{sensores/luz} o \texttt{sensores/puerta}.
+  \item El bridge recibe el mensaje MQTT y lo convierte a trama serial.
+  \item El gateway recibe la trama y la transmite por LoRa al actuador.
+  \item El actuador ejecuta la acción y responde con ACK.
+  \item El gateway recibe el ACK y notifica al bridge.
+  \item Si no hay ACK en el tiempo límite, el gateway reintenta (hasta 3 veces).
+\end{enumerate}
+
+\section*{Políticas de Calidad de Servicio}
+
+Para garantizar la fiabilidad del sistema se implementan las siguientes políticas:
+
+\begin{itemize}
+  \item \textbf{Rate limiting}: el bridge limita los envíos a un mínimo de 150~ms entre mensajes para no saturar LoRa.
+  \item \textbf{Eliminación de duplicados}: mensajes idénticos recibidos en una ventana de 2 segundos se ignoran.
+  \item \textbf{Reintentos con ACK}: el gateway reintenta hasta 3 veces si no recibe confirmación del actuador.
+  \item \textbf{Timeout configurable}: el tiempo máximo de espera de ACK es de 2 segundos, ajustado para SF10 y BW 62.5~kHz.
+\end{itemize}
+
+\section*{Diagrama de Secuencia}
+
+A continuación se muestra el diagrama de secuencia para un ciclo completo de detección y actuación:
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    node distance=18mm,
+    actor/.style={draw, minimum width=18mm, minimum height=8mm, align=center},
+    arrow/.style={-{Stealth}, thick},
+    darrow/.style={-{Stealth}, thick, dashed}
+  ]
+    % Actores
+    \node[actor] (esc) {Esclavo};
+    \node[actor, right=of esc] (mae) {Maestro};
+    \node[actor, right=of mae] (gw) {Gateway};
+    \node[actor, right=of gw] (rpi) {Raspberry};
+    \node[actor, right=of rpi] (act) {Actuador};
+    
+    % Líneas de vida
+    \foreach \n in {esc, mae, gw, rpi, act} {
+      \draw[dashed, gray] (\n.south) -- ++(0,-55mm);
+    }
+    
+    % Mensajes
+    \draw[arrow] ([yshift=-10mm]esc.south) -- node[above, font=\scriptsize]{Lectura sensor} ([yshift=-10mm]mae.south);
+    \draw[darrow] ([yshift=-18mm]mae.south) -- node[above, font=\scriptsize]{LoRa: sensor/1} ([yshift=-18mm]gw.south);
+    \draw[arrow] ([yshift=-26mm]gw.south) -- node[above, font=\scriptsize]{Serial} ([yshift=-26mm]rpi.south);
+    \draw[arrow] ([yshift=-34mm]rpi.south) -- node[above, font=\scriptsize]{Serial: cmd} ([yshift=-34mm]gw.south);
+    \draw[darrow] ([yshift=-42mm]gw.south) -- node[above, font=\scriptsize]{LoRa: cmd} ([yshift=-42mm]act.south);
+    \draw[darrow] ([yshift=-50mm]act.south) -- node[above, font=\scriptsize]{LoRa: ACK} ([yshift=-50mm]gw.south);
+  \end{tikzpicture}
+  \caption{Diagrama de secuencia: detección de luz y actuación.}
+  \label{fig:secuencia-luz}
+\end{figure}
+
+\section*{Consideraciones de Seguridad}
+
+Aunque el sistema no implementa cifrado en las comunicaciones LoRa (fuera del alcance de este proyecto académico), se aplican medidas básicas:
+
+\begin{itemize}
+  \item Filtrado por dirección de origen en el actuador.
+  \item Sync Word compartido (\texttt{0x12}) que actúa como identificador de red.
+  \item Comunicación MQTT local (localhost) sin exposición a Internet.
+\end{itemize}
+
+En un despliegue real se recomendaría añadir cifrado AES en la capa de aplicación y autenticación MQTT con usuario/contraseña o certificados TLS.
