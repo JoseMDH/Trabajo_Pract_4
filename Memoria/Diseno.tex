@@ -95,7 +95,7 @@ A nivel de diseño de interacción se ha priorizado:
 La arquitectura del sistema se basa en una comunicación jerárquica y modular entre los distintos componentes, cada uno con 
 responsabilidades claras:
 \begin{itemize}
-  \item \textbf{Esclavo de sensores}: encargado de la adquisición de datos desde los sensores físicos (LDR y SRF01/SRF02) y de 
+  \item \textbf{Esclavo de sensores}: encargado de la adquisición de datos desde los sensores físicos (LDR y SRF01/SRF02) \cite{SRF02-docs} y de 
   enviarlos al maestro a través del canal serie.
   \item \textbf{Maestro de sensores}: recibe los datos del esclavo, procesa las mediciones aplicando umbrales para determinar 
   estados lógicos, y gestiona la comunicación inalámbrica mediante LoRa con el gateway.
