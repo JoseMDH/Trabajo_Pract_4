@@ -7,31 +7,47 @@ En esta sección se describen las principales decisiones de diseño tanto a nive
 A nivel lógico se ha optado por una arquitectura por capas:
 
 \begin{itemize}
-  \item \textbf{Capa de sensores}: formada por un esclavo y un maestro (MKR WAN 1310). El esclavo encapsula el acceso hardware a los sensores (I\textsuperscript{2}C para SRF01/SRF02 y analógico para la LDR) detrás de un protocolo serie simple. El maestro actúa como único punto que interpreta las medidas, aplica umbrales y decide estados lógicos.
-  \item \textbf{Capa de transporte LoRa}: el maestro y el gateway intercambian tramas LoRa con cabeceras explícitas (direcciones, identificador de mensaje, longitud), lo que permite dirigir mensajes a distintos nodos (gateway, actuador) y asociar ACKs a comandos concretos.
-  \item \textbf{Capa de integración MQTT}: en la Raspberry Pi, un proceso puente traduce entre el protocolo serie del gateway y mensajes MQTT, mapeando topics internos (\texttt{sensor/0}, \texttt{sensor/1}) a topics lógicos (\texttt{sensores/puerta}, \texttt{sensores/luz}). Esta capa aplica además políticas de \emph{rate limiting} y eliminación de duplicados para no saturar LoRa.
-  \item \textbf{Capa de presentación}: formada por el dashboard web y herramientas como \texttt{mosquitto\_sub}/\texttt{mosquitto\_pub}. Estas aplicaciones solo ven topics MQTT y no necesitan conocer detalles de LoRa ni del protocolo maestro--esclavo.
+  \item \textbf{Capa de sensores}: formada por un esclavo y un maestro (MKR WAN 1310). El esclavo encapsula el 
+  acceso hardware a los sensores (I\textsuperscript{2}C para SRF01/SRF02 y analógico para la LDR) detrás de un protocolo serie 
+  simple. El maestro actúa como único punto que interpreta las medidas, aplica umbrales y decide estados lógicos.
+  \item \textbf{Capa de transporte LoRa}: el maestro y el gateway intercambian tramas LoRa con cabeceras explícitas 
+  (direcciones, identificador de mensaje, longitud), lo que permite dirigir mensajes a distintos nodos (gateway, actuador) y 
+  asociar ACKs a comandos concretos.
+  \item \textbf{Capa de integración MQTT}: en la Raspberry Pi, un proceso puente traduce entre el protocolo serie del gateway y
+   mensajes MQTT, mapeando topics internos (\texttt{sensor/0}, \texttt{sensor/1}) a topics lógicos (\texttt{sensores/puerta}, 
+   \texttt{sensores/luz}). Esta capa aplica además políticas de \emph{rate limiting} y eliminación de duplicados para no saturar LoRa.
+  \item \textbf{Capa de presentación}: formada por el dashboard web y 
+  herramientas como \texttt{mosquitto\_sub}/\texttt{mosquitto\_pub}. Estas aplicaciones solo ven topics MQTT y no necesitan conocer 
+  detalles de LoRa ni del protocolo maestro--esclavo.
 \end{itemize}
 
 Esta separación responde a dos decisiones clave:
 
 \begin{itemize}
-  \item Mantener los nodos embebidos (maestro, esclavo, actuador) lo más simples posible, delegando el tratamiento de mensajes, la conversión de formatos y la integración con otras aplicaciones en la Raspberry Pi.
-  \item Utilizar formatos binarios compactos en los enlaces de menor ancho de banda (LoRa y UART) y formatos más ricos (cadenas y JSON) en MQTT, donde el coste en bytes es menos crítico.
+  \item Mantener los nodos embebidos (maestro, esclavo, actuador) lo más simples posible, delegando el tratamiento de mensajes, 
+  la conversión de formatos y la integración con otras aplicaciones en la Raspberry Pi.
+  \item Utilizar formatos binarios compactos en los enlaces de menor ancho de banda (LoRa y UART) y formatos más ricos 
+  (cadenas y JSON) en MQTT, donde el coste en bytes es menos crítico.
 \end{itemize}
 
-En cuanto al control, el maestro solo envía nuevas órdenes cuando detecta un cambio de estado (por ejemplo, de luz=0 a luz=1), y el actuador siempre responde con un ACK con el mismo identificador de mensaje. El gateway reintenta automáticamente las transmisiones si no recibe ese ACK dentro de un tiempo máximo.
+En cuanto al control, el maestro solo envía nuevas órdenes cuando detecta un cambio de estado (por ejemplo, de luz=0 a luz=1), 
+y el actuador siempre responde con un ACK con el mismo identificador de mensaje. El gateway reintenta automáticamente las 
+transmisiones si no recibe ese ACK dentro de un tiempo máximo.
 
 \section*{Prototipos/Mockups}
 
-Aunque el proyecto no es una aplicación móvil, se ha diseñado una interfaz web sencilla como dashboard de usuario final. La página muestra dos tarjetas principales:
+Aunque el proyecto no es una aplicación móvil, se ha diseñado una interfaz web sencilla como dashboard de usuario final. 
+La página muestra dos tarjetas principales:
 
 \begin{itemize}
-  \item \textbf{Sensor de luz}: icono y estado textual (\emph{oscuro} / \emph{iluminado}), con dos botones para enviar manualmente valores 0 o 1 sobre el topic \texttt{sensores/luz}.
-  \item \textbf{Sensor de puerta}: icono de puerta y estado (\emph{cerrada/nadie} o \emph{abierta/gente}), de nuevo con botones para forzar los estados 0 o 1 sobre \texttt{sensores/puerta}.
+  \item \textbf{Sensor de luz}: icono y estado textual (\emph{oscuro} / \emph{iluminado}), con dos botones para enviar manualmente 
+  valores 0 o 1 sobre el topic \texttt{sensores/luz}.
+  \item \textbf{Sensor de puerta}: icono de puerta y estado (\emph{cerrada/nadie} o \emph{abierta/gente}), de nuevo con botones 
+  para forzar los estados 0 o 1 sobre \texttt{sensores/puerta}.
 \end{itemize}
 
-Además, el dashboard incluye indicadores de conexión (estado de la conexión web y del broker MQTT) y un panel de log donde se registran los eventos relevantes (nuevos valores recibidos, comandos enviados, pérdidas de conexión).
+Además, el dashboard incluye indicadores de conexión (estado de la conexión web y del broker MQTT) y un panel de log donde 
+se registran los eventos relevantes (nuevos valores recibidos, comandos enviados, pérdidas de conexión).
 
 A nivel de diseño de interacción se ha priorizado:
 
@@ -135,3 +151,12 @@ responsabilidades claras:
   \caption{Diagrama de arquitectura del sistema. Líneas continuas: comunicación serie/MQTT. Líneas discontinuas: LoRa inalámbrico.}
   \label{fig:diagrama-arquitectura}
 \end{figure}
+
+\subsection*{Diseño de circuitos con KiCad}
+Para homogeneizar el diseño de los circuitos entre todos los miembros del grupo, se utilizó KiCad como herramienta común
+ para el esquemático y el diseño de PCB. En KiCad se modeló el divisor de tensión de la LDR, lo que permitió compartir los mismos 
+ ficheros de proyecto y reducir errores de cableado entre montajes físicos.
+
+KiCad es una suite de diseño electrónico libre y de código abierto, ampliamente utilizada en entornos académicos y profesionales 
+para el diseño de circuitos impresos \cite{kicad}. Además, su documentación oficial facilita la configuración de reglas de 
+diseño y la generación de los \emph{layouts} necesarios para el montaje \cite{kicad-docs}.

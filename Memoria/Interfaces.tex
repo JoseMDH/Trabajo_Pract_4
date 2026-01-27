@@ -1,10 +1,12 @@
 % Interfaces - Broker, Dashboard y Gateway
 
-En este capítulo se describen las interfaces de software del sistema: el gateway LoRa, el puente MQTT-LoRa y el dashboard web de monitorización.
+En este capítulo se describen las interfaces de software del sistema: el gateway LoRa, 
+el puente MQTT-LoRa y el dashboard web de monitorización.
 
 \section*{Gateway LoRa (MKR WAN 1310)}
 
-El gateway actúa como intermediario bidireccional entre la red LoRa y la Raspberry Pi. Su función principal es traducir entre el protocolo binario de LoRa y el protocolo serial estructurado que entiende el puente MQTT.
+El gateway actúa como intermediario bidireccional entre la red LoRa y la Raspberry Pi. 
+Su función principal es traducir entre el protocolo binario de LoRa y el protocolo serial estructurado que entiende el puente MQTT.
 
 \subsection*{Funcionalidades principales}
 
@@ -243,4 +245,5 @@ El dashboard es accesible desde cualquier dispositivo en la misma red local medi
 \texttt{http://<IP\_RASPBERRY>:5000}
 \end{center}
 
-La aplicación está configurada con \texttt{cors\_allowed\_origins="*"} para permitir conexiones desde cualquier origen durante el desarrollo.
+La aplicación está configurada con \texttt{cors\_allowed\_origins="*"} para permitir conexiones desde cualquier 
+origen durante el desarrollo.

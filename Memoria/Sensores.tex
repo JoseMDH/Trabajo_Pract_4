@@ -6,7 +6,6 @@ los formatos de mensajes intercambiados y la codificación utilizada en cada cap
 \section*{Notas Técnicas}
 
 \begin{itemize}
-  \item Por incompatibilidades de hardware, se usó \texttt{SoftwareSerial.h} para reemplazar \texttt{Serial1} en el Arduino UNO.
   \item Todas las placas conectadas a la antena LoRa están conectadas a una batería para manejar la tensión y no quemar la placa.
   \item Se heredó código de las prácticas 2 y 3 de la asignatura.
 \end{itemize}
@@ -51,7 +50,8 @@ struct SensorConfig {
 };
 \end{lstlisting}
 
-Durante la fase de inicialización, el dispositivo detecta automáticamente la presencia de los sensores I\textsuperscript{2}C y habilita por defecto las mediciones periódicas (1~segundo) para aquellos sensores activos.
+Durante la fase de inicialización, el dispositivo detecta automáticamente la presencia de los sensores I\textsuperscript{2}C y 
+habilita por defecto las mediciones periódicas (1~segundo) para aquellos sensores activos.
 
 \subsection*{Funciones de Lectura}
 
@@ -96,7 +96,8 @@ void sendResponse(uint8_t code, uint8_t* data, uint8_t len) {
 
 \section*{Maestro (\texttt{Maestro.ino})}
 
-El maestro supervisa el sistema de sensores, interpreta las mediciones recibidas y las publica como pares etiqueta-valor a través de la red LoRa.
+El maestro supervisa el sistema de sensores, interpreta las mediciones recibidas y las publica como pares etiqueta-valor a 
+través de la red LoRa.
 
 \subsection*{Umbrales de Decisión}
 
@@ -155,6 +156,9 @@ El maestro configura el módulo LoRa integrado en el MKR WAN 1310 con los siguie
 #define LORA_SYNC_WORD          0x12  // Palabra de sincronizacion
 #define LORA_PREAMBLE_LENGTH    8     // Longitud preambulo
 \end{lstlisting}
+
+Decidimos usar un ancho de banda de 62.5~kHz y un Spreading Factor de 10 para equilibrar
+alcance y tasa de datos, adecuados para un entorno urbano.
 
 \subsection*{Formato del Payload LoRa}
 

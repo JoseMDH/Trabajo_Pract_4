@@ -1,13 +1,15 @@
 % Desarrollo - Actuador
 
-En este capítulo se describe el desarrollo del nodo actuador, encargado de ejecutar las acciones físicas en respuesta a los estados detectados por los sensores. El actuador recibe comandos a través de LoRa desde el gateway y controla dos elementos: un LED para la iluminación y un servomotor para la apertura y cierre de una puerta.
+En este capítulo se describe el desarrollo del nodo actuador, encargado de ejecutar las acciones físicas en respuesta a los estados 
+detectados por los sensores. El actuador recibe comandos a través de LoRa desde el gateway y controla dos elementos: un LED para 
+la iluminación y un servomotor para la apertura y cierre de una puerta.
 
 \section*{Hardware del Actuador}
 
 El nodo actuador está compuesto por los siguientes elementos:
 
 \begin{itemize}
-  \item \textbf{Arduino UNO}: microcontrolador que ejerce de fuente.
+  \item \textbf{Arduino UNO}: microcontrolador que ejerce de fuente de alimentación.
   \item \textbf{Arduino mkr WAN 1310}: microcontrolador principal que ejecuta la lógica de control y la comunicación LoRa.
   \item \textbf{LED}: indicador luminoso conectado al pin 6, representa la iluminación del entorno.
   \item \textbf{Servo SG90}: servomotor conectado al pin 7, simula el mecanismo de apertura de una puerta.
@@ -15,7 +17,8 @@ El nodo actuador está compuesto por los siguientes elementos:
 
 \section*{Configuración LoRa}
 
-El actuador debe utilizar exactamente la misma configuración LoRa que el resto de nodos del sistema para garantizar la interoperabilidad:
+El actuador debe utilizar exactamente la misma configuración LoRa que el resto de nodos del
+ sistema para garantizar la interoperabilidad:
 
 \begin{lstlisting}[language=C++, caption={Configuración LoRa del actuador.}]
 LoRaConfig_t nodeConfig = {6, 10, 5, 2};
@@ -60,7 +63,8 @@ Para el control de puerta:
 
 \section*{Sistema de ACK}
 
-El actuador implementa un sistema de confirmación (ACK) para garantizar la entrega fiable de comandos. Cada vez que recibe un paquete válido, responde inmediatamente con un ACK que incluye:
+El actuador implementa un sistema de confirmación (ACK) para garantizar la entrega fiable de comandos. 
+Cada vez que recibe un paquete válido, responde inmediatamente con un ACK que incluye:
 
 \begin{itemize}
   \item Dirección de destino (el gateway).

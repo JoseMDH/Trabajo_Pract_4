@@ -1,6 +1,7 @@
 % Arquitectura
 
-En este capítulo se describe la arquitectura global del sistema, los flujos de comunicación entre los distintos nodos y los protocolos utilizados en cada capa.
+En este capítulo se describe la arquitectura global del sistema, los flujos de comunicación entre los distintos nodos y los protocolos 
+utilizados en cada capa.
 
 \section*{Visión General}
 
@@ -56,7 +57,8 @@ El flujo de datos desde los sensores hasta las aplicaciones cliente sigue el sig
 
 \section*{Protocolo Maestro-Esclavo (Serial)}
 
-La comunicación entre el esclavo y el maestro utiliza un protocolo serie sencillo basado en tramas estructuradas. El esclavo envía periódicamente las lecturas de los sensores al maestro.
+La comunicación entre el esclavo y el maestro utiliza un protocolo serie sencillo basado en tramas estructuradas. 
+El esclavo envía periódicamente las lecturas de los sensores al maestro.
 
 \begin{table}[H]
 \centering
@@ -173,7 +175,7 @@ Cuando una aplicación cliente desea controlar el actuador, el flujo es el sigui
   \item La aplicación publica en \texttt{sensores/luz} o \texttt{sensores/puerta}.
   \item El bridge recibe el mensaje MQTT y lo convierte a trama serial.
   \item El gateway recibe la trama y la transmite por LoRa al actuador.
-  \item El actuador ejecuta la acción y responde con ACK.
+  \item El actuador responde con ACK y ejecuta la acción.
   \item El gateway recibe el ACK y notifica al bridge.
   \item Si no hay ACK en el tiempo límite, el gateway reintenta (hasta 3 veces).
 \end{enumerate}
@@ -227,7 +229,8 @@ A continuación se muestra el diagrama de secuencia para un ciclo completo de de
 
 \section*{Consideraciones de Seguridad}
 
-Aunque el sistema no implementa cifrado en las comunicaciones LoRa (fuera del alcance de este proyecto académico), se aplican medidas básicas:
+Aunque el sistema no implementa cifrado en las comunicaciones LoRa (fuera del alcance de este proyecto académico), 
+se aplican medidas básicas:
 
 \begin{itemize}
   \item Filtrado por dirección de origen en el actuador.
@@ -235,4 +238,4 @@ Aunque el sistema no implementa cifrado en las comunicaciones LoRa (fuera del al
   \item Comunicación MQTT local (localhost) sin exposición a Internet.
 \end{itemize}
 
-En un despliegue real se recomendaría añadir cifrado AES en la capa de aplicación y autenticación MQTT con usuario/contraseña o certificados TLS.
+En un despliegue real se debería añadir cifrado en la capa de aplicación y autenticación MQTT con usuario/contraseña o certificados.
