@@ -21,27 +21,36 @@ El flujo de datos desde los sensores hasta las aplicaciones cliente sigue el sig
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}[
-    node distance=12mm,
-    box/.style={draw, rounded corners, minimum width=28mm, minimum height=10mm, align=center, fill=blue!10},
-    data/.style={draw, rounded corners, minimum width=24mm, minimum height=8mm, align=center, fill=green!10},
-    arrow/.style={-{Stealth}, thick}
+    box/.style={draw, rounded corners, minimum width=28mm, minimum height=10mm,
+                align=center, fill=blue!10},
+    arrow/.style={-{Stealth}, thick},
+    node distance=18mm
   ]
-    % Nodos
-    \node[box] (sensor) {Sensores\\(LDR, SRF)};
-    \node[box, right=of sensor] (esclavo) {Esclavo};
-    \node[box, right=of esclavo] (maestro) {Maestro};
-    \node[box, right=of maestro] (gateway) {Gateway};
-    \node[box, right=of gateway] (raspi) {Raspberry Pi};
-    
-    % Flechas
+    % Fila superior
+    \node[box] (sensor)  {Sensores\\(LDR, SRF)};
+    \node[box, right=30mm of sensor] (esclavo) {Esclavo};
+    \node[box, right=30mm of esclavo] (maestro) {Maestro};
+
+    % Fila inferior (más ancha, hacia la izquierda)
+    \node[box, below=25mm of esclavo, xshift=15mm] (gateway) {Gateway};
+    \node[box, left=35mm of gateway] (raspi) {Raspberry Pi};
+
+    % Flechas fila superior
     \draw[arrow] (sensor) -- node[above, font=\scriptsize]{Analógico/I2C} (esclavo);
     \draw[arrow] (esclavo) -- node[above, font=\scriptsize]{Serial} (maestro);
-    \draw[arrow, dashed] (maestro) -- node[above, font=\scriptsize]{LoRa} (gateway);
-    \draw[arrow] (gateway) -- node[above, font=\scriptsize]{Serial} (raspi);
+
+    % Flecha Maestro -> Gateway (diagonal hacia abajo-izquierda)
+    \draw[arrow, dashed] (maestro.south) -- node[sloped, above, font=\scriptsize]{LoRa}
+        (gateway.north east);
+
+    % Flecha Gateway -> Raspberry (horizontal hacia la izquierda)
+    \draw[arrow] (gateway.west) -- node[above, font=\scriptsize]{Serial (GPIO UART)}
+        (raspi.east);
   \end{tikzpicture}
-  \caption{Flujo de datos desde sensores hasta la Raspberry Pi.}
+  \caption{Flujo de datos desde sensores, pasando por el maestro, hasta la Raspberry Pi.}
   \label{fig:flujo-sensores}
 \end{figure}
+
 
 \section*{Protocolo Maestro-Esclavo (Serial)}
 
