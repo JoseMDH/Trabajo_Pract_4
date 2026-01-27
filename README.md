@@ -15,7 +15,7 @@ Sistema de domótica distribuido que permite el control automático de iluminaci
 ```
 ┌─────────────────┐     Serial      ┌─────────────────┐
 │     ESCLAVO     │◄───────────────►│     MAESTRO     │
-│  (Arduino UNO)  │                 │ (MKR WAN 1310)  │
+│  (MKR WAN 1310)  │                 │ (MKR WAN 1310)  │
 │  - Sensor Luz   │                 │  - Supervisor   │
 │  - SRF01/SRF02  │                 │  - LoRa TX      │
 └─────────────────┘                 └────────┬────────┘
@@ -30,7 +30,7 @@ Sistema de domótica distribuido que permite el control automático de iluminaci
          ▼                                   ▼
 ┌─────────────────┐                 ┌─────────────────┐
 │  Aplicaciones   │                 │    ACTUADOR     │
-│  - Dashboard    │                 │  (Arduino UNO)  │
+│  - Dashboard    │                 │  (MKR WAN 1310)  │
 │  - Node-RED     │                 │  - LED          │
 │  - Home Assist  │                 │  - Servo        │
 └─────────────────┘                 └─────────────────┘
@@ -59,7 +59,7 @@ Trabajo_Pract_4/
 │       ├── requirements.txt
 │       └── README.md
 │
-├── actuador/              # Actuador con LoRa (Arduino UNO + módulo LoRa)
+├── actuador/              # Actuador con LoRa (MKR WAN 1310)
 │   ├── actuador.ino
 │   └── README.md
 │
@@ -82,7 +82,7 @@ Trabajo_Pract_4/
 
 | Componente | Descripción |
 |------------|-------------|
-| Arduino UNO | Esclavo - lectura de sensores |
+| MKR WAN 1310 | Esclavo - lectura de sensores |
 | Arduino MKR WAN 1310 | Maestro - comunicación LoRa |
 | SRF01 / SRF02 | Sensores ultrasónicos I2C |
 | LDR + Resistencia | Sensor de luz (divisor de voltaje) |
@@ -98,14 +98,14 @@ Trabajo_Pract_4/
 
 | Componente | Descripción |
 |------------|-------------|
-| Arduino UNO | Controlador |
+| MKR WAN 1310 | Controlador |
 | Módulo LoRa (SX1276) | Recepción de comandos |
 | LED | Control de iluminación |
 | Servo SG90 | Control de puerta |
 
 ---
 
-## ⚡ Configuración LoRa
+##  Configuración LoRa
 
 Todos los dispositivos deben usar la **misma configuración**:
 
@@ -130,7 +130,7 @@ Preamble:       8 símbolos
 
 ---
 
-## 📡 Protocolo de Comunicación
+## Protocolo de Comunicación
 
 ### Formato de Paquete LoRa
 
@@ -185,9 +185,9 @@ Tipos:
 
 ---
 
-## 🚀 Instalación y Configuración
+## Instalación y Configuración
 
-### 1. Esclavo (Arduino UNO)
+### 1. Esclavo (MKR WAN 1310)
 
 ```bash
 # Abrir en Arduino IDE
@@ -197,7 +197,7 @@ sensores/Esclavo/Esclavo.ino
 # - SRF01: I2C (A4=SDA, A5=SCL)
 # - SRF02: I2C (A4=SDA, A5=SCL)
 # - LDR: A1 (con divisor de voltaje)
-# - Serial1: Pin 8 (RX), Pin 9 (TX) → conectar a Maestro
+# - Serial1: Pin 13 (RX), Pin 14 (TX) → conectar a Maestro
 ```
 
 ### 2. Maestro (MKR WAN 1310)
@@ -247,7 +247,7 @@ sudo systemctl start mosquitto
 python3 mqtt_lora_bridge.py
 ```
 
-### 5. Actuador (Arduino UNO + Módulo LoRa)
+### 5. Actuador (MKR WAN 1310)
 
 ```bash
 # Abrir en Arduino IDE
@@ -268,7 +268,7 @@ actuador/actuador.ino
 
 ---
 
-## 🎮 Uso del Sistema
+## Uso del Sistema
 
 ### Comandos del Maestro (Monitor Serial)
 
@@ -311,7 +311,7 @@ mosquitto_pub -h localhost -t "sensores/puerta" -m "0"
 
 ---
 
-## 📊 Umbrales y Lógica
+## Umbrales y Lógica
 
 ### Sensor de Luz (LDR)
 
@@ -360,7 +360,7 @@ mosquitto_sub -h localhost -t "#" -v
 
 ---
 
-## ⚠️ Solución de Problemas
+## Solución de Problemas
 
 | Problema | Solución |
 |----------|----------|
@@ -372,13 +372,13 @@ mosquitto_sub -h localhost -t "#" -v
 
 ---
 
-## 📄 Licencia
+## Licencia
 
 Proyecto académico - Universidad de Las Palmas de Gran Canaria (ULPGC)
 
 ---
 
-## 📚 Referencias
+## Referencias
 
 - [Librería LoRa Arduino](https://github.com/sandeepmistry/arduino-LoRa)
 - [Arduino MKR WAN 1310](https://docs.arduino.cc/hardware/mkr-wan-1310)
