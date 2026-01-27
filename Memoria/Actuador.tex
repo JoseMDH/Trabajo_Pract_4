@@ -7,31 +7,11 @@ En este capítulo se describe el desarrollo del nodo actuador, encargado de ejec
 El nodo actuador está compuesto por los siguientes elementos:
 
 \begin{itemize}
-  \item \textbf{Arduino UNO}: microcontrolador principal que ejecuta la lógica de control.
-  \item \textbf{Módulo LoRa SX1276}: receptor de comunicaciones inalámbricas a 868~MHz.
+  \item \textbf{Arduino UNO}: microcontrolador que ejerce de fuente.
+  \item \textbf{Arduino mkr WAN 1310}: microcontrolador principal que ejecuta la lógica de control y la comunicación LoRa.
   \item \textbf{LED}: indicador luminoso conectado al pin 6, representa la iluminación del entorno.
   \item \textbf{Servo SG90}: servomotor conectado al pin 7, simula el mecanismo de apertura de una puerta.
 \end{itemize}
-
-Las conexiones del módulo LoRa al Arduino UNO siguen el estándar SPI:
-
-\begin{table}[H]
-\centering
-\caption{Conexiones del módulo LoRa SX1276 al Arduino UNO.}
-\label{tab:conexiones-lora-actuador}
-\begin{tabular}{ll}
-\toprule
-\textbf{Pin LoRa} & \textbf{Pin Arduino} \\
-\midrule
-NSS  & Pin 10 \\
-MOSI & Pin 11 \\
-MISO & Pin 12 \\
-SCK  & Pin 13 \\
-RST  & Pin 9 \\
-DIO0 & Pin 2 \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 \section*{Configuración LoRa}
 
@@ -45,7 +25,8 @@ LoRaConfig_t nodeConfig = {6, 10, 5, 2};
 // TxPwr = 2 dBm
 \end{lstlisting}
 
-La dirección LoRa asignada al actuador es \texttt{0x06}, mientras que solo acepta mensajes provenientes del gateway (\texttt{0x05}). Esto proporciona una capa básica de seguridad al filtrar emisores no autorizados.
+La dirección LoRa asignada al actuador es \texttt{0x06}, mientras que solo acepta mensajes provenientes del gateway 
+(\texttt{0x05}). Esto proporciona una capa básica de seguridad al filtrar emisores no autorizados.
 
 \section*{Protocolo de Comandos}
 
@@ -105,7 +86,9 @@ void sendAck(uint8_t dest, uint16_t msgId, uint8_t status) {
 
 \section*{Control de Duplicados}
 
-Para evitar que un mismo comando se ejecute múltiples veces (por ejemplo, debido a retransmisiones del gateway), el actuador mantiene el identificador del último mensaje procesado. Si recibe un paquete con el mismo \texttt{msgId}, responde con ACK pero no vuelve a ejecutar la acción:
+Para evitar que un mismo comando se ejecute múltiples veces (por ejemplo, debido a retransmisiones del gateway), el actuador mantiene
+ el identificador del último mensaje procesado. Si recibe un paquete con el mismo \texttt{msgId}, responde con ACK pero no vuelve a 
+ ejecutar la acción:
 
 \begin{lstlisting}[language=C++, caption={Detección de mensajes duplicados.}]
 uint16_t lastProcessedMsgId = 0xFFFF;
