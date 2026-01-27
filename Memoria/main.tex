@@ -1,0 +1,92 @@
+\documentclass[12pt,oneside,a4paper]{report}
+
+% ====== Paquetes ======
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\graphicspath{{Ilustraciones/}}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue,
+  pdfauthor={},
+  pdftitle={Memoria de Prácticas}
+}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  tabsize=2
+}
+
+% ====== Metadatos personalizables ======
+\newcommand{\titulo}{\textbf{Sistema de Domótica con LoRa y MQTT}} % título del trabajo
+\newcommand{\autores}{José Manuel Díaz Hernández \\ Nicolás Rey Alonso \\ Santiago Galindo Peralta \\ Alberto Martel Rodríguez}
+
+% ====== Documento ======
+\begin{document}
+
+% ---- Portada ----
+\input{Portada}
+
+% ---- Índices ----
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+\tableofcontents
+\clearpage
+
+\listoffigures
+\clearpage
+
+\listoftables
+\clearpage
+
+% ---- Cuerpo ----
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\chapter{Introducción}
+\input{Introduccion}
+
+\chapter{Descripción de la aplicación incluyendo objetivos}\label{chap:descripcion}
+\input{Descripcion}
+
+\chapter{Diseño}\label{chap:diseno}
+\input{Diseno}
+
+\chapter{Arquitectura}\label{chap:arquitectura}
+\input{Arquitectura}
+
+\chapter{Modelo de Datos}\label{chap:modelodatos}
+\input{ModeloDatos}
+
+\chapter{Desarrollo}\label{chap:desarrollo}
+\input{Desarrollo}
+
+\chapter{Interfaces}\label{chap:interfaces}
+\input{Interfaces}
+
+\chapter{Conclusiones}\label{chap:conclusiones}
+\input{Conclusiones}
+
+% ---- Bibliografía (opcional) ----
+\bibliographystyle{ieeetr}
+\bibliography{ref}
+
+\end{document}
