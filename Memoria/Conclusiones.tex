@@ -1,23 +1,30 @@
 % Conclusiones
 
-En este capítulo se presentan las conclusiones del proyecto, los objetivos alcanzados, las dificultades encontradas y las posibles líneas de mejora.
+En este capítulo se presentan las conclusiones del proyecto, los objetivos alcanzados, las dificultades encontradas 
+y las posibles líneas de mejora.
 
 \section*{Objetivos Alcanzados}
 
 El proyecto ha cumplido satisfactoriamente los objetivos planteados al inicio:
 
 \begin{itemize}
-  \item Se ha diseñado e implementado una arquitectura IoT completa que integra sensores físicos, comunicación LoRa, un broker MQTT y aplicaciones cliente.
+  \item Se ha diseñado e implementado una arquitectura IoT completa que integra sensores físicos, comunicación LoRa, 
+  un broker MQTT y aplicaciones cliente.
   
-  \item Se ha desarrollado un protocolo maestro-esclavo eficiente para la lectura de sensores ultrasónicos (SRF01/SRF02) y analógicos (LDR), con soporte para lecturas periódicas y configuración remota.
+  \item Se ha mejorado el protocolo maestro-esclavo de la practica 2 para la lectura de sensores ultrasónicos (SRF01/SRF02) 
+  y analógicos (LDR).
   
-  \item Se ha implementado un formato de tramas LoRa con direccionamiento, identificadores de mensaje y sistema de ACK que garantiza la entrega fiable de comandos.
+  \item Se ha implementado un formato de tramas LoRa con direccionamiento, identificadores de mensaje y sistema de ACK 
+  que garantiza la entrega fiable de comandos.
   
-  \item Se ha desplegado un broker MQTT (Mosquitto) y un puente serie-MQTT que expone los datos de los sensores y permite el control del actuador desde aplicaciones externas.
+  \item Se ha desplegado un broker MQTT (Mosquitto) y un puente serie-MQTT que expone los datos de los sensores y permite 
+  el control del actuador desde aplicaciones externas.
   
-  \item Se ha desarrollado un dashboard web interactivo que visualiza en tiempo real el estado de luz y puerta, y permite enviar comandos manuales.
+  \item Se ha desarrollado un dashboard web interactivo que visualiza en tiempo real el estado de luz y puerta, y 
+  permite enviar comandos manuales.
   
-  \item El sistema responde automáticamente a los cambios detectados por los sensores, encendiendo o apagando la luz y abriendo o cerrando la puerta según los umbrales configurados.
+  \item El sistema responde automáticamente a los cambios detectados por los sensores, encendiendo o apagando la luz y 
+  abriendo o cerrando la puerta según los umbrales configurados.
 \end{itemize}
 
 \section*{Dificultades Encontradas}
@@ -25,15 +32,16 @@ El proyecto ha cumplido satisfactoriamente los objetivos planteados al inicio:
 Durante el desarrollo del proyecto se encontraron las siguientes dificultades:
 
 \begin{itemize}
-  \item \textbf{Incompatibilidad de SoftwareSerial}: el Arduino UNO no dispone de un segundo puerto serie hardware, lo que obligó a utilizar la librería \texttt{SoftwareSerial} con sus limitaciones de velocidad y fiabilidad.
+  \item \textbf{Coordinación del equipo}: al tratarse de un proyecto multidisciplinar, fue necesario coordinar las tareas entre los miembros del equipo para asegurar una 
+  integración fluida de los distintos componentes. La principal dificultad fue alinear los tiempos de desarrollo y pruebas entre los 
+  distintos miembros.
   
-  \item \textbf{Gestión de energía del MKR WAN 1310}: las placas MKR WAN conectadas al módulo LoRa requieren una fuente de alimentación externa (batería) para manejar correctamente los picos de consumo durante la transmisión y evitar daños.
+  \item \textbf{Sincronización de parámetros LoRa}: todos los nodos deben utilizar exactamente la misma configuración de frecuencia,
+   ancho de banda, spreading factor y sync word. Pequeñas discrepancias impiden la comunicación.
   
-  \item \textbf{Sincronización de parámetros LoRa}: todos los nodos deben utilizar exactamente la misma configuración de frecuencia, ancho de banda, spreading factor y sync word. Pequeñas discrepancias impiden la comunicación.
+  \item \textbf{Tiempos de propagación LoRa}: con SF10 y BW 62.5~kHz, el tiempo de transmisión de un paquete puede superar varios 
+  cientos de milisegundos, lo que requiere ajustar los timeouts de ACK y las políticas de rate limiting.
   
-  \item \textbf{Tiempos de propagación LoRa}: con SF10 y BW 62.5~kHz, el tiempo de transmisión de un paquete puede superar varios cientos de milisegundos, lo que requiere ajustar los timeouts de ACK y las políticas de rate limiting.
-  
-  \item \textbf{Compatibilidad de versiones de Paho MQTT}: la librería Paho MQTT para Python cambió la firma de los callbacks entre las versiones 1.x y 2.x, lo que requirió adaptar el código para soportar ambas.
 \end{itemize}
 
 \section*{Conocimientos Aplicados}
@@ -41,13 +49,15 @@ Durante el desarrollo del proyecto se encontraron las siguientes dificultades:
 El proyecto ha permitido aplicar de forma práctica conceptos de diversas áreas:
 
 \begin{itemize}
-  \item \textbf{Comunicaciones inalámbricas}: configuración de módulos LoRa, comprensión de parámetros como spreading factor, ancho de banda y coding rate.
+  \item \textbf{Comunicaciones inalámbricas}: configuración de módulos LoRa, comprensión de parámetros como spreading factor, 
+  ancho de banda y coding rate.
   
   \item \textbf{Protocolos de comunicación}: diseño de protocolos binarios compactos, sistemas de ACK/NACK, y manejo de duplicados.
   
   \item \textbf{Arquitectura IoT}: separación de responsabilidades entre capas (sensores, transporte, integración, presentación).
   
-  \item \textbf{Sistemas embebidos}: programación de Arduino con restricciones de memoria y procesamiento, uso de interrupciones y temporizadores.
+  \item \textbf{Sistemas embebidos}: programación de Arduino con restricciones de memoria y procesamiento, uso de interrupciones 
+  y temporizadores.
   
   \item \textbf{Desarrollo web}: creación de aplicaciones en tiempo real con Flask, SocketIO y WebSockets.
   
@@ -59,7 +69,7 @@ El proyecto ha permitido aplicar de forma práctica conceptos de diversas áreas
 El sistema actual es funcional y cumple los requisitos académicos, pero existen varias áreas de mejora para un despliegue en producción:
 
 \begin{itemize}
-  \item \textbf{Seguridad}: implementar cifrado AES-128 en la capa de aplicación LoRa y autenticación MQTT con TLS.
+  \item \textbf{Seguridad}: implementar cifrado en la capa de aplicación LoRa y autenticación MQTT con TLS.
   
   \item \textbf{Persistencia}: almacenar el histórico de lecturas en una base de datos (InfluxDB, SQLite) para análisis posterior.
   
@@ -78,8 +88,12 @@ El sistema actual es funcional y cumple los requisitos académicos, pero existen
 
 \section*{Valoración Personal}
 
-El desarrollo de este proyecto ha sido una experiencia enriquecedora que ha permitido integrar conocimientos de múltiples asignaturas del grado. La combinación de hardware embebido, comunicaciones inalámbricas y desarrollo web ofrece una visión completa del ecosistema IoT.
+El desarrollo de este proyecto ha sido una experiencia enriquecedora que ha permitido integrar conocimientos de múltiples
+ asignaturas del grado. La combinación de hardware embebido, comunicaciones inalámbricas y desarrollo web ofrece una visión completa 
+ del ecosistema IoT.
 
-El trabajo en equipo ha sido fundamental para abordar las distintas áreas del proyecto, distribuyendo las tareas según las fortalezas de cada miembro y manteniendo una comunicación fluida para integrar los componentes.
+El trabajo en equipo ha sido fundamental para abordar las distintas áreas del proyecto, distribuyendo las tareas según las fortalezas 
+de cada miembro y manteniendo una comunicación fluida para integrar los componentes.
 
-El sistema resultante, aunque sencillo en su funcionalidad (control de luz y puerta), demuestra que es posible construir soluciones domóticas completas con hardware de bajo coste y software libre, sentando las bases para proyectos más ambiciosos en el futuro.
+El sistema resultante, aunque sencillo en su funcionalidad (control de luz y puerta), demuestra que es posible construir soluciones 
+domóticas completas con hardware de bajo coste y software libre, sentando las bases para proyectos más ambiciosos en el futuro.

@@ -4,14 +4,16 @@ En este capítulo se describe la arquitectura global del sistema, los flujos de 
 
 \section*{Visión General}
 
-El sistema sigue una arquitectura distribuida de tipo \emph{sensor-gateway-actuador} con integración en la nube a través de MQTT. Los componentes principales son:
+El sistema sigue una arquitectura distribuida de tipo \emph{sensor-gateway-actuador} con integración en la nube a través de MQTT. 
+Los componentes principales son:
 
 \begin{enumerate}
-  \item \textbf{Nodo de sensores}: compuesto por un esclavo (Arduino UNO) y un maestro (MKR WAN 1310).
-  \item \textbf{Gateway LoRa}: MKR WAN 1310 conectado a la Raspberry Pi.
+  \item \textbf{Nodo de sensores}: compuesto por un esclavo (Arduino MKR WAN 1310) y un maestro (MKR WAN 1310).
+  \item \textbf{Gateway LoRa}: Arduino MKR WAN 1310 conectado a la Raspberry Pi.
   \item \textbf{Raspberry Pi}: ejecuta el broker MQTT y el puente serie-MQTT.
-  \item \textbf{Nodo actuador}: Arduino UNO con módulo LoRa externo.
-  \item \textbf{Aplicaciones cliente}: dashboard web, Node-RED, Home Assistant.
+  \item \textbf{2 Fuentes de alimentación}: proporcionan energía a los sensores y dispositivos.
+  \item \textbf{Nodo actuador}: Arduino MKR WAN 1310 conectado a los motores.
+  \item \textbf{Aplicaciones cliente}: dashboard web.
 \end{enumerate}
 
 \section*{Diagrama de Flujo de Datos}
