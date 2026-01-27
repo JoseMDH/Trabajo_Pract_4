@@ -93,7 +93,7 @@ responsabilidades claras:
 \subsubsection*{Diagrama de arquitectura del sistema}
 \begin{figure}[H]
   \centering
-  \shorthandoff{<>}% desactivar shorthands '<' y '>' de babel en español
+  \shorthandoff{<>}%
   \resizebox{\textwidth}{!}{%
     \begin{tikzpicture}[
       box/.style={draw, rounded corners, minimum width=30mm, minimum height=10mm, align=center, fill=white, font=\scriptsize},
@@ -104,30 +104,34 @@ responsabilidades claras:
 
     % Nodes
     \node[box] (esclavo) {ESCLAVO\\(Arduino UNO)\\Luz/SRF};
-    \node[box,right=22mm of esclavo] (maestro) {MAESTRO\\(MKR WAN)\\LoRa TX};
+    \node[box,right=30mm of esclavo] (maestro) {MAESTRO\\(MKR WAN)\\LoRa TX};
     \node[box,below=15mm of maestro] (gateway) {GATEWAY\\(MKR WAN)\\LoRa RX/TX};
-    \node[box,left=22mm of gateway] (raspi) {RASPBERRY PI\\MQTT Broker};
-    \node[box,right=22mm of gateway] (actuador) {ACTUADOR\\(Arduino UNO)\\LED/Servo};
+    \node[box,left=30mm of gateway] (raspi) {RASPBERRY PI\\MQTT Broker};
+    \node[box,right=30mm of gateway] (actuador) {ACTUADOR\\(Arduino UNO)\\LED/Servo};
     \node[box,below=15mm of raspi] (apps) {APLICACIONES\\Dashboard};
 
-    % Connections (solid = serial, dashed = LoRa)
+    % Connections
     \draw[serial] (esclavo) -- node[midway,above,lbl]{Serial} (maestro);
-    \draw[lora] (maestro.south) .. controls +(-2mm,-8mm) and +(0,8mm) .. node[midway,right=1mm,lbl]{LoRa} (gateway.north);
+    \draw[lora] (maestro.south) .. controls +(0,-8mm) and +(0,8mm) .. node[midway,right=1mm,lbl]{LoRa} (gateway.north);
     \draw[<->, thick] (gateway.west) -- node[midway,above,lbl]{Serial (GPIO UART)} (raspi.east);
     \draw[lora] (gateway.east) -- node[midway,above,lbl]{LoRa} (actuador.west);
     \draw[serial] (raspi) -- node[midway,left,lbl]{MQTT} (apps);
 
-    % Legend
-    \begin{scope}[shift={(0,-45mm)}]
-      \node[anchor=north west, font=\small] at (-50mm,0) {\textbf{Leyenda:}};
-      \draw[serial] (-25mm,-4mm) -- ++(10mm,0) node[right=2mm, font=\tiny] {Serial};
-      \draw[lora] (5mm,-4mm) -- ++(10mm,0) node[right=2mm, font=\tiny] {LoRa (dashed)};
-    \end{scope}
-
     \end{tikzpicture}%
   }%
-  \shorthandon{<>}% reactivar shorthands
-  \caption{Diagrama de arquitectura del sistema. Líneas continuas: comunicación serial/MQTT. Líneas discontinuas: LoRa inalámbrico.}
+  \shorthandon{<>}%
+
+  % Leyenda separada, debajo del dibujo
+  \vspace{2mm}
+  \begin{tikzpicture}[
+    serial/.style={-{Stealth}, thick},
+    lora/.style={-{Stealth}, thick, dashed}
+  ]
+    \node[anchor=west,font=\small] at (0,0) {\textbf{Leyenda:}};
+    \draw[serial] (0,-0.5) -- ++(1,0) node[right=2mm,font=\tiny] {Serial / MQTT};
+    \draw[lora] (4,-0.5) -- ++(1,0) node[right=2mm,font=\tiny] {LoRa (dashed)};
+  \end{tikzpicture}
+
+  \caption{Diagrama de arquitectura del sistema. Líneas continuas: comunicación serie/MQTT. Líneas discontinuas: LoRa inalámbrico.}
   \label{fig:diagrama-arquitectura}
 \end{figure}
-
