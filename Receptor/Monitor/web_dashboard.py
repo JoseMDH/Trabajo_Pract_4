@@ -22,7 +22,7 @@ MQTT_PORT = 1883
 # Topics MQTT
 TOPIC_SENSOR_LUZ = "sensores/luz"
 TOPIC_SENSOR_PUERTA = "sensores/puerta"
-TOPIC_ACTUADOR_LUZ = "actuador/luz" # Posible correccion si el dashboard debe publicar aqui
+TOPIC_ACTUADOR_LUZ = "actuador/luz"
 TOPIC_ACTUADOR_PUERTA = "actuador/puerta"
 
 # Estado inicial
