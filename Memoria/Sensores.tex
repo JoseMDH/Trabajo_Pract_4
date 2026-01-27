@@ -35,6 +35,8 @@ LDR & Fotorresistencia & Analógico (A1) & Nivel de luz ambiental \\
 El esclavo se encarga de la gestión directa de sensores. Cada sensor dispone de una estructura de configuración propia que almacena 
 su dirección, unidad de medida, retardo mínimo, modo de funcionamiento (periódico o puntual), periodo de muestreo y último valor leído.
 
+\clearpage
+
 \begin{lstlisting}[language=C++, caption={Estructura de configuración de sensores.}]
 struct SensorConfig {
   uint8_t address;      // Direccion I2C del sensor
@@ -73,6 +75,8 @@ uint16_t readLDR() {
   return analogRead(A1);  // Valor 0-1023
 }
 \end{lstlisting}
+
+\clearpage
 
 \subsection*{Protocolo de Respuesta}
 
@@ -118,6 +122,8 @@ SRF & distancia $\geq$ 100~cm & 0 (lejos) & Cerrar puerta \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\clearpage
 
 \subsection*{Estructura de Mensajes}
 
@@ -168,6 +174,8 @@ Valor & 1 byte & Estado binario del sensor (0 o 1) \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\clearpage
 
 \subsection*{Política de Envío}
 
