@@ -1,6 +1,7 @@
 % Modelo de Datos - Sensores
 
-En este capítulo se describe el modelo de datos utilizado en el sistema, incluyendo la estructura de configuración de los sensores, los formatos de mensajes intercambiados y la codificación utilizada en cada capa.
+En este capítulo se describe el modelo de datos utilizado en el sistema, incluyendo la estructura de configuración de los sensores, 
+los formatos de mensajes intercambiados y la codificación utilizada en cada capa.
 
 \section*{Notas Técnicas}
 
@@ -31,7 +32,8 @@ LDR & Fotorresistencia & Analógico (A1) & Nivel de luz ambiental \\
 
 \section*{Esclavo (\texttt{Esclavo.ino})}
 
-El esclavo se encarga de la gestión directa de sensores. Cada sensor dispone de una estructura de configuración propia que almacena su dirección, unidad de medida, retardo mínimo, modo de funcionamiento (periódico o puntual), periodo de muestreo y último valor leído.
+El esclavo se encarga de la gestión directa de sensores. Cada sensor dispone de una estructura de configuración propia que almacena 
+su dirección, unidad de medida, retardo mínimo, modo de funcionamiento (periódico o puntual), periodo de muestreo y último valor leído.
 
 \begin{lstlisting}[language=C++, caption={Estructura de configuración de sensores.}]
 struct SensorConfig {
